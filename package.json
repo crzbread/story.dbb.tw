@@ -9,6 +9,7 @@
     "preview": "astro preview",
     "sync": "astro sync",
     "check": "astro check",
+    "test": "node --experimental-strip-types --test src/**/*.test.ts",
     "astro": "astro",
     "pure": "astro-pure",
     "format": "prettier --write  '**/*.{js,jsx,ts,tsx,md,mdx,astro}'",

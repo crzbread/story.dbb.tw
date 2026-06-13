@@ -3,21 +3,21 @@ import type { Config, IntegrationUserConfig, ThemeUserConfig } from 'astro-pure/
 export const theme: ThemeUserConfig = {
   // [Basic]
   /** Title for your website. Will be used in metadata and as browser tab title. */
-  title: 'Astro Theme Pure',
+  title: 'AI 故事集',
   /** Will be used in index page & copyright declaration */
-  author: 'Pure Lab',
+  author: 'dbb',
   /** Description metadata for your website. Can be used in page metadata. */
-  description: 'Stay hungry, stay foolish',
+  description: '由 AI 產生與整理的文章',
   /** The default favicon for your site which should be a path to an image in the `public/` directory. */
   favicon: '/favicon/favicon.ico',
   /** The default social card image for your site which should be a path to an image in the `public/` directory. */
   socialCard: '/images/social-card.png',
   /** Specify the default language for this site. */
   locale: {
-    lang: 'en-US',
-    attrs: 'en_US',
+    lang: 'zh-TW',
+    attrs: 'zh_TW',
     // Date locale
-    dateLocale: 'en-US',
+    dateLocale: 'zh-TW',
     dateOptions: {
       day: 'numeric',
       month: 'short',
@@ -48,8 +48,8 @@ export const theme: ThemeUserConfig = {
   /** Configure the header of your site. */
   header: {
     menu: [
-      { title: 'Blog', link: '/blog' },
-      { title: 'Tags', link: '/tags' }
+      { title: '文章', link: '/blog' },
+      { title: '標籤', link: '/tags' }
     ]
   },
 
@@ -62,9 +62,7 @@ export const theme: ThemeUserConfig = {
     /** Enable displaying a “Astro & Pure theme powered” link in your site’s footer. */
     credits: true,
     /** Optional details about the social media accounts for this site. */
-    social: [
-      { icon: 'rss', label: 'RSS', href: '/rss.xml' }
-    ]
+    social: [{ icon: 'rss', label: 'RSS', href: '/rss.xml' }]
   },
 
   // [Content]
@@ -135,3 +133,7 @@ export const integ: IntegrationUserConfig = {
 
 const config = { ...theme, integ } as Config
 export default config
+
+export const site = {
+  homePostLimit: 5
+}

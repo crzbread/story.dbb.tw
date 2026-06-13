@@ -8,9 +8,10 @@ import remarkParse from 'remark-parse'
 import remarkRehype from 'remark-rehype'
 import { unified } from 'unified'
 import { visit } from 'unist-util-visit'
-
-import { getBlogCollection, sortMDByDate } from 'astro-pure/server'
 import config from 'virtual:config'
+
+import { getBlogCollection } from 'astro-pure/server'
+import { normalizeBlogPost, sortBlogPosts } from '@/utils/blog'
 
 // Get dynamic import of images as a map collection
 const imagesGlob = import.meta.glob<{ default: ImageMetadata }>(
@@ -54,7 +55,9 @@ const renderContent = async (post: CollectionEntry<'blog'>, site: URL) => {
 }
 
 const GET = async (context: AstroGlobal) => {
-  const allPostsByDate = sortMDByDate(await getBlogCollection()) as CollectionEntry<'blog'>[]
+  const allPostsByDate = sortBlogPosts(
+    (await getBlogCollection()).map(normalizeBlogPost)
+  ) as CollectionEntry<'blog'>[]
   const siteUrl = context.site ?? new URL(import.meta.env.SITE)
 
   return rss({
@@ -71,8 +74,8 @@ const GET = async (context: AstroGlobal) => {
       allPostsByDate.map(async (post) => ({
         pubDate: post.data.publishDate,
         link: `/blog/${post.id}`,
-        customData: `<h:img src="${typeof post.data.heroImage?.src === 'string' ? post.data.heroImage?.src : post.data.heroImage?.src.src}" />
-          <enclosure url="${typeof post.data.heroImage?.src === 'string' ? post.data.heroImage?.src : post.data.heroImage?.src.src}" />`,
+        customData: `<h:img src="${new URL(typeof post.data.heroImage.src === 'string' ? post.data.heroImage.src : post.data.heroImage.src.src, siteUrl)}" />
+          <enclosure url="${new URL(typeof post.data.heroImage.src === 'string' ? post.data.heroImage.src : post.data.heroImage.src.src, siteUrl)}" />`,
         content: await renderContent(post, siteUrl),
         ...post.data
       }))

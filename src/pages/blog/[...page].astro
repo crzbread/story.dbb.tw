@@ -3,15 +3,16 @@ import type { GetStaticPaths, Page } from 'astro'
 import type { CollectionEntry } from 'astro:content'
 
 import { Paginator, PostPreview } from 'astro-pure/components/pages'
-import { getBlogCollection, getUniqueTagsWithCount, sortMDByDate } from 'astro-pure/server'
+import { getBlogCollection, getUniqueTagsWithCount } from 'astro-pure/server'
 import { Button, Icon } from 'astro-pure/user'
 import PageLayout from '@/layouts/BaseLayout.astro'
+import { normalizeBlogPost, sortBlogPosts } from '@/utils/blog'
 import config from '@/site-config'
 
 export const prerender = true
 
 export const getStaticPaths = (async ({ paginate }) => {
-  const collections = sortMDByDate(await getBlogCollection())
+  const collections = sortBlogPosts((await getBlogCollection()).map(normalizeBlogPost))
   const uniqueTags = getUniqueTagsWithCount(collections).map(([tag]) => tag)
   const collectionsCount = collections.length
   return paginate(collections, {
@@ -29,8 +30,8 @@ interface Props {
 const { page, uniqueTags, collectionsCount } = Astro.props
 
 const meta = {
-  description: 'Some posts or archives of my blog',
-  title: 'Blog'
+  description: '所有由 AI 產生的文章',
+  title: '文章'
 }
 
 const paginationProps = {
@@ -53,7 +54,7 @@ const paginationProps = {
   <Button title='Back' href='/' variant='back' />
   <main class='mt-6 lg:mt-10'>
     <div id='content-header' class='animate'>
-      <h1 class='mb-6 mt-6 text-3xl font-medium sm:mt-10'>Blog</h1>
+      <h1 class='mb-6 mt-6 text-3xl font-medium sm:mt-10'>文章</h1>
     </div>
     {
       page.data.length === 0 ? (
@@ -64,7 +65,7 @@ const paginationProps = {
             {/* header */}
             <div class='mb-3 flex flex-col justify-between text-sm sm:mb-5 sm:flex-row'>
               <span class='text-muted-foreground'>
-                Page {page.currentPage} - Showing {page.data.length} of {collectionsCount} posts
+                第 {page.currentPage} 頁，共 {collectionsCount} 篇文章
               </span>
             </div>
             {/* posts */}
@@ -94,8 +95,8 @@ const paginationProps = {
                 }
               </ul>
               <span class='mt-4 block sm:text-end'>
-                <a aria-label='View all blog categories' href='/tags' data-astro-prefetch>
-                  View all →
+                <a aria-label='查看所有標籤' href='/tags' data-astro-prefetch>
+                  查看所有標籤 →
                 </a>
               </span>
             </aside>

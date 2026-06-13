@@ -20,7 +20,6 @@ const blog = defineCollection({
       title: z.string().max(60),
       description: z.string().max(160),
       publishDate: z.coerce.date(),
-      // Optional
       updatedDate: z.coerce.date().optional(),
       heroImage: z
         .object({
@@ -29,15 +28,14 @@ const blog = defineCollection({
           inferSize: z.boolean().optional(),
           width: z.number().optional(),
           height: z.number().optional(),
-
           color: z.string().optional()
         })
-        .optional(),
-      tags: z.array(z.string()).default([]).transform(removeDupsAndLowerCase),
-      language: z.string().optional(),
-      draft: z.boolean().default(false),
-      // Special fields
-      comment: z.boolean().default(true)
+        .refine((image) => Boolean(image.alt?.trim()), {
+          message: 'heroImage.alt is required'
+        }),
+      tags: z.array(z.string().min(1)).min(1).transform(removeDupsAndLowerCase),
+      language: z.string().min(1),
+      draft: z.boolean().default(false)
     })
 })
 
