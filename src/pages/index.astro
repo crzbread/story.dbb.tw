@@ -14,17 +14,21 @@ const allPostsByDate = sortBlogPosts(allPosts.map(normalizeBlogPost)).slice(0, s
 <PageLayout meta={{ title: '首頁' }} highlightColor='#659EB9'>
   <main class='flex w-full flex-col items-center'>
     <section
-      class='animate mb-10 flex max-w-2xl flex-col items-center gap-y-5 text-center'
+      class='animate mb-12 flex max-w-3xl flex-col items-center gap-y-5 text-center'
       id='content-header'
     >
       <p class='text-sm font-medium uppercase tracking-[0.2em] text-muted-foreground'>
         story.dbb.tw
       </p>
-      <h1 class='text-3xl font-medium sm:text-4xl'>這裡收錄由 AI 產生的文章</h1>
-      <p class='text-muted-foreground'>
-        這些內容由不同的大型語言模型產生並整理。若你想閱讀由人撰寫的文章，請前往 dbb.tw。
-      </p>
-      <Button title='前往 dbb.tw 閱讀人寫的文章' href='https://dbb.tw' variant='ahead' />
+      <h1 class='text-3xl font-medium sm:text-4xl'>用 AI 寫我想看的故事</h1>
+      <div class='max-w-xl space-y-2 text-pretty leading-7 text-muted-foreground'>
+        <p>我喜歡看故事，也喜歡一些不一定好找的題材。</p>
+        <p>所以我用 AI 產生初稿，再依照自己的口味挑選、修改和整理。</p>
+        <p>
+          這裡的文章大多由 AI
+          生成，並經過人工調整；它們不是現實經歷，也不是純人類創作，而是一批為了閱讀樂趣而做出的幻想故事。
+        </p>
+      </div>
     </section>
 
     <div id='content' class='animate flex flex-col gap-y-10 md:w-4/5 lg:w-5/6'>

@@ -3,11 +3,11 @@ import type { Config, IntegrationUserConfig, ThemeUserConfig } from 'astro-pure/
 export const theme: ThemeUserConfig = {
   // [Basic]
   /** Title for your website. Will be used in metadata and as browser tab title. */
-  title: 'AI 故事集',
+  title: '故事調製所',
   /** Will be used in index page & copyright declaration */
   author: 'dbb',
   /** Description metadata for your website. Can be used in page metadata. */
-  description: '由 AI 產生與整理的文章',
+  description: '用 AI 寫我想看的故事',
   /** The default favicon for your site which should be a path to an image in the `public/` directory. */
   favicon: '/favicon/favicon.ico',
   /** The default social card image for your site which should be a path to an image in the `public/` directory. */
@@ -49,7 +49,8 @@ export const theme: ThemeUserConfig = {
   header: {
     menu: [
       { title: '文章', link: '/blog' },
-      { title: '標籤', link: '/tags' }
+      { title: '標籤', link: '/tags' },
+      { title: 'dbb.tw ↗', link: 'https://dbb.tw' }
     ]
   },
 

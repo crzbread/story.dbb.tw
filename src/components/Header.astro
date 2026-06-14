@@ -67,6 +67,7 @@ import { Icon } from 'astro-pure/user'
 </script>
 <script>
   import { setTheme, showToast } from 'astro-pure/utils'
+  import { getNextTheme } from '@/utils/theme'
 
   class HeaderComponent extends HTMLElement {
     connectedCallback() {
@@ -82,12 +83,8 @@ import { Icon } from 'astro-pure/user'
       // Dark Mode
       const darkModeBtn = this.querySelector('#toggleDarkMode') as HTMLElement
       darkModeBtn.addEventListener('click', () => {
-        // Old way: dispatch event
-        // const toggleDarkModeEvent = new CustomEvent('theme-change', {
-        //   detail: { theme: localStorage.getItem('theme') === 'light' ? 'dark' : 'light' }
-        // })
-        // document.dispatchEvent(toggleDarkModeEvent)
-        const newTheme = setTheme(undefined, true)
+        const newTheme = getNextTheme(document.documentElement.classList.contains('dark'))
+        setTheme(newTheme, true)
         darkModeBtn.dataset.theme = newTheme
         showToast({ message: `Set theme to ${newTheme}` })
       })
