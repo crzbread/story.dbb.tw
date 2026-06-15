@@ -87,6 +87,26 @@ const socialImageURL = new URL(ogImage ? ogImage : config.socialCard, Astro.url)
 <meta content={Astro.generator} name='generator' />
 
 {
+  prod && (
+    <>
+      <script
+        is:inline
+        async
+        src='https://www.googletagmanager.com/gtag/js?id=G-6LQD9KD6SJ'
+      ></script>
+      <script is:inline>
+        window.dataLayer = window.dataLayer || []
+        function gtag() {
+          dataLayer.push(arguments)
+        }
+        gtag('js', new Date())
+        gtag('config', 'G-6LQD9KD6SJ')
+      </script>
+    </>
+  )
+}
+
+{
   /* User script*/
   prod && (
     <script>
