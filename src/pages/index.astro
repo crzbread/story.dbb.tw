@@ -4,11 +4,13 @@ import { getBlogCollection } from 'astro-pure/server'
 import { Button } from 'astro-pure/user'
 import PageLayout from '@/layouts/BaseLayout.astro'
 import Section from '@/components/home/Section.astro'
-import { normalizeBlogPost, sortBlogPosts } from '@/utils/blog'
+import { getFeaturedBlogPosts, normalizeBlogPost, sortBlogPosts } from '@/utils/blog'
 import { site } from '@/site-config'
 
 const allPosts = await getBlogCollection()
-const allPostsByDate = sortBlogPosts(allPosts.map(normalizeBlogPost)).slice(0, site.homePostLimit)
+const normalizedPosts = allPosts.map(normalizeBlogPost)
+const featuredPosts = getFeaturedBlogPosts(normalizedPosts)
+const allPostsByDate = sortBlogPosts(normalizedPosts).slice(0, site.homePostLimit)
 ---
 
 <PageLayout meta={{ title: '首頁' }} highlightColor='#659EB9'>
@@ -32,6 +34,18 @@ const allPostsByDate = sortBlogPosts(allPosts.map(normalizeBlogPost)).slice(0, s
     </section>
 
     <div id='content' class='animate flex flex-col gap-y-10 md:w-4/5 lg:w-5/6'>
+      {
+        featuredPosts.length > 0 && (
+          <Section title='精選文章'>
+            <ul class='flex flex-col gap-y-1.5 sm:gap-y-2'>
+              {featuredPosts.map((p) => (
+                <PostPreview post={p} />
+              ))}
+            </ul>
+          </Section>
+        )
+      }
+
       {
         allPostsByDate.length > 0 && (
           <Section title='最新文章'>

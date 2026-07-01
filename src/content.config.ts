@@ -35,6 +35,7 @@ const blog = defineCollection({
         }),
       tags: z.array(z.string().min(1)).min(1).transform(removeDupsAndLowerCase),
       language: z.string().min(1),
+      featured: z.boolean().default(false),
       draft: z.boolean().default(false)
     })
 })

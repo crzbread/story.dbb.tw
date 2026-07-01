@@ -3,6 +3,7 @@ title: "媽媽的食譜"
 description: "母親走後，曉微獨自回到老家收拾。在這間沒有手機、只有一紙電話簿的舊屋子裡，她在廚房瓦斯爐旁的鐵架上，翻開了那本帶有油煙印的筆記本。"
 publishDate: 2026-06-25
 language: zh-TW
+featured: true
 tags:
   - 寫實
   - 溫馨療癒  

@@ -3,6 +3,7 @@ title: "冬季限定"
 description: "豆漿和蛋餅，半份報紙，一本素色封面的書。有時候，一段關係的全部，就是這些普通的小事。《冬季限定》寫的是那種說不上來是什麼、卻清清楚楚存在過的陪伴。"
 publishDate: 2026-06-14
 language: zh-TW
+featured: true
 tags:
   - 都市寫實
   - 短篇文學

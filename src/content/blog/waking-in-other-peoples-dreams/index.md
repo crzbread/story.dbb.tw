@@ -3,6 +3,7 @@ title: "他只會在別人的夢裡醒來"
 description: "失去自己的夢之後，他只能在別人的夢裡醒來，旁觀陌生人、主管、母親與朋友未竟的遺憾，最後拼回自己空白的人生。"
 publishDate: 2026-07-01
 language: zh-TW
+featured: true
 tags:
   - 夢境
   - 心理

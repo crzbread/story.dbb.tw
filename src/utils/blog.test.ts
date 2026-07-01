@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { getBlogSlug, normalizeBlogPost, sortBlogPosts } from './blog.ts'
+import { getBlogSlug, getFeaturedBlogPosts, normalizeBlogPost, sortBlogPosts } from './blog.ts'
 
 test('removes the index segment from a folder-based post id', () => {
   assert.equal(getBlogSlug('example/index'), 'example')
@@ -32,4 +32,29 @@ test('sorts posts by publishDate without promoting updated posts', () => {
   }
 
   assert.deepEqual(sortBlogPosts([olderUpdatedPost, newerPost]), [newerPost, olderUpdatedPost])
+})
+
+test('filters featured posts and sorts them by publishDate', () => {
+  const olderFeaturedPost = {
+    data: {
+      featured: true,
+      publishDate: new Date('2026-06-01')
+    }
+  }
+  const newerFeaturedPost = {
+    data: {
+      featured: true,
+      publishDate: new Date('2026-06-10')
+    }
+  }
+  const regularPost = {
+    data: {
+      publishDate: new Date('2026-06-15')
+    }
+  }
+
+  assert.deepEqual(getFeaturedBlogPosts([olderFeaturedPost, regularPost, newerFeaturedPost]), [
+    newerFeaturedPost,
+    olderFeaturedPost
+  ])
 })
