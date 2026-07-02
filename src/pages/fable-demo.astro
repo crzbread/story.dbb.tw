@@ -1,0 +1,1056 @@
+---
+import { getImage } from 'astro:assets'
+
+import { getBlogCollection } from 'astro-pure/server'
+import { normalizeBlogPost, sortBlogPosts } from '@/utils/blog'
+
+// 讀取全部文章（build 時執行）：之後新增文章、重新 build 就會自動出現在時間軸上
+const allPosts = await getBlogCollection()
+const posts = sortBlogPosts(allPosts.map(normalizeBlogPost)).reverse() // 由舊到新
+
+const items = await Promise.all(
+  posts.map(async (post) => {
+    let cover: string | null = null
+    if (post.data.heroImage?.src) {
+      const img = await getImage({ src: post.data.heroImage.src, width: 720, format: 'webp' })
+      cover = img.src
+    }
+    return {
+      title: post.data.title,
+      description: post.data.description,
+      date: post.data.publishDate.toISOString().slice(0, 10),
+      tags: post.data.tags ?? [],
+      url: `/blog/${post.id}`,
+      cover
+    }
+  })
+)
+
+// 1×1 透明 GIF 佔位：真正的封面由前端依攝影機距離漸進載入
+const coverPlaceholder =
+  'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
+
+// 每個「年 / 月」的第一篇文章旁邊放一個懸浮月份標記
+const markers: { label: string; index: number }[] = []
+let lastKey = ''
+items.forEach((it, i) => {
+  const key = it.date.slice(0, 7)
+  if (key !== lastKey) {
+    lastKey = key
+    const [y, m] = key.split('-')
+    markers.push({ label: `${y} · ${Number(m)} 月`, index: i })
+  }
+})
+---
+
+<html lang='zh-TW'>
+  <head>
+    <meta charset='utf-8' />
+    <meta name='viewport' content='width=device-width, initial-scale=1, viewport-fit=cover' />
+    <title>Fable Demo · 3D 故事時間軸</title>
+    <meta
+      name='description'
+      content='story.dbb.tw 的 3D 立體文章時間軸，捲動即可穿越每一篇故事的誕生時刻。'
+    />
+    <link rel='icon' type='image/png' sizes='32x32' href='/favicon/favicon-32x32.png' />
+    <link rel='icon' type='image/png' sizes='16x16' href='/favicon/favicon-16x16.png' />
+    <meta name='theme-color' content='#05060e' />
+    <noscript>
+      <style>
+        /* 無 JS：退回扁平清單（html 前綴為了蓋過後載入的主要樣式） */
+        html #fd-stage {
+          position: static;
+          perspective: none;
+          overflow: visible;
+        }
+        html #fd-vignette,
+        html #fd-floor,
+        html .fd-marker,
+        html #fd-hint,
+        html #fd-play,
+        html #fd-progress,
+        html #fd-hud-bottom,
+        html #fd-spacer,
+        html .fd-cover {
+          display: none;
+        }
+        html #fd-world {
+          position: static;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 28px;
+          padding: 100px 16px 70px;
+        }
+        html #fd-world > * {
+          position: static;
+          transform: none !important;
+          margin: 0;
+        }
+        html .fd-title {
+          width: min(640px, 90vw);
+        }
+        html .fd-title h1 {
+          font-size: 44px;
+        }
+      </style>
+    </noscript>
+  </head>
+
+  <body>
+    <!-- 3D 舞台（固定滿版，捲動由下方 spacer 撐出） -->
+    <div id='fd-stage'>
+      <div id='fd-world'>
+        <div id='fd-floor'></div>
+
+        <!-- 開場標題 -->
+        <div class='fd-title' id='fd-intro'>
+          <p class='fd-title-kicker'>story.dbb.tw</p>
+          <h1>故事時間軸</h1>
+          <p class='fd-title-sub'>FABLE DEMO — 捲動，穿越每一篇故事誕生的時刻</p>
+        </div>
+
+        <!-- 文章卡片 -->
+        {
+          items.map((it, i) => (
+            <a
+              class='fd-card'
+              href={it.url}
+              data-index={i}
+              data-date={it.date}
+              data-title={it.title}
+            >
+              {it.cover && (
+                <img
+                  class='fd-cover'
+                  src={coverPlaceholder}
+                  data-src={it.cover}
+                  alt={it.title}
+                  decoding='async'
+                />
+              )}
+              <div class='fd-card-body'>
+                <p class='fd-date'>
+                  <span class='fd-dot' />
+                  {it.date} · 新增了
+                </p>
+                <h2 class='fd-card-title'>《{it.title}》</h2>
+                <p class='fd-desc'>{it.description}</p>
+                <p class='fd-tags'>
+                  {it.tags.map((t) => (
+                    <span class='fd-tag'>#{t}</span>
+                  ))}
+                </p>
+              </div>
+            </a>
+          ))
+        }
+
+        <!-- 月份標記 -->
+        {
+          markers.map((m) => (
+            <div class='fd-marker' data-index={m.index}>
+              {m.label}
+            </div>
+          ))
+        }
+
+        <!-- 終點 -->
+        <div class='fd-title fd-end' id='fd-end'>
+          <h1>未完待續⋯</h1>
+          <p class='fd-title-sub'>之後每一篇新文章，都會自動出現在這條時間軸上</p>
+          <p class='fd-title-kicker'>共 {items.length} 篇故事</p>
+        </div>
+      </div>
+
+      <!-- 電影暗角（真實元素才能確實 pointer-events: none，偽元素會攔截點擊） -->
+      <div id='fd-vignette' aria-hidden='true'></div>
+    </div>
+
+    <!-- HUD -->
+    <header id='fd-hud-top'>
+      <a id='fd-back' href='/'>← story.dbb.tw</a>
+      <button id='fd-play' type='button'>▶ 自動運鏡</button>
+    </header>
+    <footer id='fd-hud-bottom'>
+      <p id='fd-readout'>&nbsp;</p>
+      <p id='fd-counter'>&nbsp;</p>
+    </footer>
+    <div id='fd-progress'><i id='fd-progress-bar'></i></div>
+    <p id='fd-hint'>SCROLL ↓ 開始飛行</p>
+
+    <!-- 撐出捲動高度 -->
+    <div id='fd-spacer'></div>
+
+    <style is:global>
+      :root {
+        --fd-bg: #05060e;
+        --fd-cyan: #6be5ff;
+        --fd-violet: #a78bfa;
+        --fd-text: #eef1ff;
+        --fd-muted: #9aa3c7;
+      }
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html {
+        scroll-behavior: auto;
+      }
+      body {
+        background:
+          radial-gradient(1200px 700px at 70% -10%, rgba(103, 76, 205, 0.22), transparent 60%),
+          radial-gradient(900px 600px at 15% 110%, rgba(38, 129, 178, 0.18), transparent 60%),
+          var(--fd-bg);
+        color: var(--fd-text);
+        font-family:
+          system-ui,
+          -apple-system,
+          'PingFang TC',
+          'Noto Sans TC',
+          'Microsoft JhengHei',
+          sans-serif;
+        overflow-x: hidden;
+      }
+
+      /* ---------- 3D 舞台 ---------- */
+      #fd-stage {
+        position: fixed;
+        inset: 0;
+        perspective: 1100px;
+        perspective-origin: 50% 46%;
+        overflow: hidden;
+      }
+      #fd-world {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        transform-style: preserve-3d;
+        will-change: transform;
+      }
+      #fd-world > * {
+        position: absolute;
+        left: 0;
+        top: 0;
+        transform-style: preserve-3d;
+      }
+
+      /* 地板網格 */
+      #fd-floor {
+        width: 9000px;
+        margin-left: -4500px;
+        background-image:
+          repeating-linear-gradient(
+            0deg,
+            rgba(122, 146, 255, 0.13) 0 1.5px,
+            transparent 1.5px 130px
+          ),
+          repeating-linear-gradient(
+            90deg,
+            rgba(122, 146, 255, 0.13) 0 1.5px,
+            transparent 1.5px 130px
+          );
+        -webkit-mask-image: radial-gradient(ellipse 46% 44% at 50% 50%, #000 30%, transparent 78%);
+        mask-image: radial-gradient(ellipse 46% 44% at 50% 50%, #000 30%, transparent 78%);
+      }
+
+      /* 星星、光暈、光軌（由 JS 產生） */
+      .fd-star {
+        width: 3px;
+        height: 3px;
+        border-radius: 50%;
+        background: #cfe6ff;
+        box-shadow: 0 0 6px rgba(160, 210, 255, 0.9);
+      }
+      .fd-nebula {
+        width: 900px;
+        height: 900px;
+        margin: -450px 0 0 -450px;
+        border-radius: 50%;
+        pointer-events: none;
+      }
+      .fd-seg {
+        height: 2px;
+        margin-top: -1px;
+        background: linear-gradient(
+          90deg,
+          rgba(107, 229, 255, 0.05),
+          rgba(107, 229, 255, 0.55),
+          rgba(167, 139, 250, 0.05)
+        );
+        box-shadow: 0 0 12px rgba(107, 229, 255, 0.35);
+      }
+      .fd-seg.fd-spur {
+        height: 1.5px;
+        opacity: 0.45;
+        box-shadow: 0 0 8px rgba(107, 229, 255, 0.25);
+      }
+      .fd-node {
+        width: 10px;
+        height: 10px;
+        margin: -5px 0 0 -5px;
+        border-radius: 50%;
+        background: var(--fd-cyan);
+        box-shadow:
+          0 0 10px var(--fd-cyan),
+          0 0 26px rgba(107, 229, 255, 0.6);
+      }
+
+      /* ---------- 開場 / 結尾標題 ---------- */
+      .fd-title {
+        width: 640px;
+        margin-left: -320px;
+        text-align: center;
+        pointer-events: none;
+      }
+      .fd-title h1 {
+        font-size: 84px;
+        font-weight: 800;
+        letter-spacing: 0.12em;
+        background: linear-gradient(120deg, var(--fd-cyan), #fff 45%, var(--fd-violet));
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+        text-shadow: 0 0 60px rgba(107, 229, 255, 0.25);
+      }
+      .fd-title-kicker {
+        font-size: 14px;
+        letter-spacing: 0.5em;
+        text-transform: uppercase;
+        color: var(--fd-muted);
+        margin-bottom: 14px;
+      }
+      .fd-title-sub {
+        margin-top: 16px;
+        font-size: 16px;
+        letter-spacing: 0.2em;
+        color: var(--fd-muted);
+      }
+
+      /* ---------- 文章卡片 ---------- */
+      .fd-card {
+        display: block;
+        will-change: transform, opacity;
+        width: min(340px, 78vw);
+        margin-left: max(-170px, -39vw);
+        margin-top: -190px;
+        border-radius: 18px;
+        overflow: hidden;
+        text-decoration: none;
+        color: var(--fd-text);
+        background: linear-gradient(160deg, rgba(24, 29, 54, 0.92), rgba(12, 14, 28, 0.94));
+        border: 1px solid rgba(126, 156, 255, 0.22);
+        box-shadow:
+          0 30px 60px rgba(0, 0, 0, 0.55),
+          0 0 0 1px rgba(0, 0, 0, 0.4),
+          0 0 42px rgba(88, 108, 255, 0.1);
+        transition:
+          box-shadow 0.35s ease,
+          border-color 0.35s ease;
+      }
+      .fd-card:hover,
+      .fd-card.fd-hover {
+        border-color: rgba(107, 229, 255, 0.65);
+        box-shadow:
+          0 30px 70px rgba(0, 0, 0, 0.6),
+          0 0 60px rgba(107, 229, 255, 0.28);
+      }
+      .fd-card:focus-visible {
+        outline: 2px solid var(--fd-cyan);
+        outline-offset: 3px;
+        border-color: rgba(107, 229, 255, 0.65);
+      }
+      .fd-cover {
+        display: block;
+        width: 100%;
+        height: 150px;
+        object-fit: cover;
+        background: rgba(122, 146, 255, 0.06);
+        opacity: 0.88;
+        -webkit-mask-image: linear-gradient(#000 60%, rgba(0, 0, 0, 0.35));
+        mask-image: linear-gradient(#000 60%, rgba(0, 0, 0, 0.35));
+      }
+      .fd-card-body {
+        padding: 16px 18px 18px;
+      }
+      .fd-date {
+        font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+        font-size: 12.5px;
+        letter-spacing: 0.14em;
+        color: var(--fd-cyan);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .fd-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--fd-cyan);
+        box-shadow: 0 0 8px var(--fd-cyan);
+      }
+      .fd-card-title {
+        margin-top: 8px;
+        font-size: 21px;
+        font-weight: 700;
+        line-height: 1.35;
+      }
+      .fd-desc {
+        margin-top: 8px;
+        font-size: 13px;
+        line-height: 1.7;
+        color: var(--fd-muted);
+        display: -webkit-box;
+        -webkit-line-clamp: 3;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+      }
+      .fd-tags {
+        margin-top: 12px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .fd-tag {
+        font-size: 11px;
+        letter-spacing: 0.06em;
+        color: #cdb8ff;
+        border: 1px solid rgba(167, 139, 250, 0.35);
+        border-radius: 999px;
+        padding: 2px 9px;
+      }
+
+      /* 月份標記 */
+      .fd-marker {
+        font-size: 58px;
+        font-weight: 800;
+        letter-spacing: 0.1em;
+        white-space: nowrap;
+        color: transparent;
+        -webkit-text-stroke: 1.5px rgba(140, 170, 255, 0.5);
+        text-shadow: 0 0 50px rgba(107, 143, 255, 0.35);
+        pointer-events: none;
+      }
+
+      /* ---------- HUD ---------- */
+      #fd-hud-top {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: calc(16px + env(safe-area-inset-top)) 22px 0;
+        z-index: 10;
+      }
+      #fd-back {
+        color: var(--fd-muted);
+        text-decoration: none;
+        font-size: 14px;
+        letter-spacing: 0.12em;
+        transition: color 0.25s;
+      }
+      #fd-back:hover {
+        color: var(--fd-cyan);
+      }
+      #fd-play {
+        font: inherit;
+        font-size: 13px;
+        letter-spacing: 0.14em;
+        color: var(--fd-text);
+        background: rgba(20, 25, 48, 0.7);
+        border: 1px solid rgba(126, 156, 255, 0.3);
+        border-radius: 999px;
+        padding: 8px 18px;
+        cursor: pointer;
+        transition:
+          border-color 0.25s,
+          box-shadow 0.25s;
+      }
+      #fd-play:hover {
+        border-color: var(--fd-cyan);
+        box-shadow: 0 0 20px rgba(107, 229, 255, 0.25);
+      }
+      #fd-hud-bottom {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: calc(18px + env(safe-area-inset-bottom));
+        text-align: center;
+        z-index: 10;
+        pointer-events: none;
+      }
+      #fd-readout {
+        font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+        font-size: 13px;
+        letter-spacing: 0.12em;
+        color: var(--fd-cyan);
+        min-height: 1.2em;
+      }
+      #fd-counter {
+        margin-top: 4px;
+        font-size: 11px;
+        letter-spacing: 0.3em;
+        color: var(--fd-muted);
+      }
+      #fd-progress {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        height: 3px;
+        background: rgba(255, 255, 255, 0.07);
+        z-index: 10;
+      }
+      #fd-progress-bar {
+        display: block;
+        width: 0;
+        height: 100%;
+        background: linear-gradient(90deg, var(--fd-cyan), var(--fd-violet));
+        box-shadow: 0 0 12px rgba(107, 229, 255, 0.7);
+      }
+      #fd-hint {
+        position: fixed;
+        left: 50%;
+        bottom: 84px;
+        transform: translateX(-50%);
+        font-size: 12px;
+        letter-spacing: 0.4em;
+        color: var(--fd-muted);
+        z-index: 10;
+        animation: fd-bob 2.2s ease-in-out infinite;
+        transition: opacity 0.6s;
+        pointer-events: none;
+      }
+      @keyframes fd-bob {
+        50% {
+          transform: translateX(-50%) translateY(8px);
+        }
+      }
+
+      /* 邊緣暗角，增加電影感 */
+      #fd-vignette {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        background: radial-gradient(
+          ellipse 75% 70% at 50% 48%,
+          transparent 55%,
+          rgba(2, 3, 9, 0.85)
+        );
+      }
+
+      /* reduced-motion（JS 加上 .fd-flat）：退回扁平清單，不做 3D 運鏡 */
+      .fd-flat #fd-stage {
+        position: static;
+        perspective: none;
+        overflow: visible;
+      }
+      .fd-flat #fd-vignette,
+      .fd-flat #fd-floor,
+      .fd-flat .fd-marker,
+      .fd-flat #fd-hint,
+      .fd-flat #fd-play,
+      .fd-flat #fd-progress,
+      .fd-flat #fd-hud-bottom,
+      .fd-flat #fd-spacer {
+        display: none;
+      }
+      .fd-flat #fd-world {
+        position: static;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 28px;
+        padding: 100px 16px 70px;
+      }
+      .fd-flat #fd-world > * {
+        position: static;
+        transform: none !important;
+        margin: 0;
+      }
+      .fd-flat .fd-title {
+        width: min(640px, 90vw);
+      }
+      .fd-flat .fd-title h1 {
+        font-size: 44px;
+      }
+      .fd-flat .fd-card {
+        opacity: 1 !important;
+      }
+
+      @media (max-width: 640px) {
+        .fd-title {
+          width: 86vw;
+          margin-left: -43vw;
+        }
+        .fd-title h1 {
+          font-size: 46px;
+        }
+        .fd-marker {
+          font-size: 36px;
+        }
+        #fd-play {
+          padding: 7px 14px;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        #fd-hint {
+          animation: none;
+        }
+      }
+    </style>
+
+    <script>
+      type V3 = { x: number; y: number; z: number }
+
+      const stage = document.getElementById('fd-stage')
+      const world = document.getElementById('fd-world')
+      const floor = document.getElementById('fd-floor')
+      const intro = document.getElementById('fd-intro')
+      const endEl = document.getElementById('fd-end')
+      const spacer = document.getElementById('fd-spacer')
+      const readout = document.getElementById('fd-readout')
+      const counter = document.getElementById('fd-counter')
+      const progressBar = document.getElementById('fd-progress-bar')
+      const hint = document.getElementById('fd-hint')
+      const playBtn = document.getElementById('fd-play') as HTMLButtonElement | null
+      const cards = Array.from(document.querySelectorAll<HTMLElement>('.fd-card'))
+      const markerEls = Array.from(document.querySelectorAll<HTMLElement>('.fd-marker'))
+
+      const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+      if (reduced) {
+        // 前庭友善：改用扁平清單，封面交給瀏覽器原生 lazy-load
+        document.documentElement.classList.add('fd-flat')
+        for (const img of document.querySelectorAll<HTMLImageElement>('img.fd-cover')) {
+          img.loading = 'lazy'
+          if (img.dataset.src) img.src = img.dataset.src
+        }
+      } else if (
+        stage &&
+        world &&
+        floor &&
+        intro &&
+        endEl &&
+        spacer &&
+        readout &&
+        counter &&
+        progressBar
+      ) {
+        const N = cards.length
+        const covers = cards.map((el) => el.querySelector<HTMLImageElement>('img.fd-cover'))
+        const coverLoaded = covers.map((img) => !img)
+
+        const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v))
+
+        // Catmull-Rom 平滑取樣（沿軌道錨點）
+        const cr = (a: number, b: number, c: number, d: number, t: number) =>
+          0.5 *
+          (2 * b +
+            (-a + c) * t +
+            (2 * a - 5 * b + 4 * c - d) * t * t +
+            (-a + 3 * b - 3 * c + d) * t * t * t)
+        const sample = (pts: V3[], t: number): V3 => {
+          const i = clamp(Math.floor(t), 0, pts.length - 2)
+          const f = t - i
+          const p0 = pts[Math.max(i - 1, 0)]
+          const p1 = pts[i]
+          const p2 = pts[i + 1]
+          const p3 = pts[Math.min(i + 2, pts.length - 1)]
+          return {
+            x: cr(p0.x, p1.x, p2.x, p3.x, f),
+            y: cr(p0.y, p1.y, p2.y, p3.y, f),
+            z: cr(p0.z, p1.z, p2.z, p3.z, f)
+          }
+        }
+
+        /* ---------- 每篇文章一個節點：同一天多篇就是多個相鄰的點 ---------- */
+
+        const dates = cards.map((el) => el.dataset.date || '')
+
+        // 橫向尺度依視窗寬度縮放：窄螢幕（手機）上卡片靠近軌道，才不會跑出視野
+        const LATERAL = clamp(window.innerWidth / 1440, 0.42, 1)
+
+        // 節點沿蜿蜒軌道排列：不同天依日期間隔拉開，同一天的點靠近但各自獨立
+        const stations: V3[] = []
+        let sz = -1000
+        cards.forEach((_, i) => {
+          if (i > 0) {
+            const days = Math.round((Date.parse(dates[i]) - Date.parse(dates[i - 1])) / 86400000)
+            sz -= days <= 0 ? 480 : clamp(days * 320, 820, 1700)
+          }
+          stations.push({
+            x: Math.sin((i + 1) * 0.85) * 380 * LATERAL,
+            y: Math.sin(i * 1.7) * 60 - 20,
+            z: sz
+          })
+        })
+
+        // 軌道錨點：起點 → 各節點 → 終點 → 延伸點（供視線前瞻）
+        const endPos: V3 = {
+          x: stations[N - 1].x * 0.4,
+          y: stations[N - 1].y - 40,
+          z: stations[N - 1].z - 1200
+        }
+        const R: V3[] = [
+          { x: 0, y: -20, z: 260 },
+          ...stations,
+          endPos,
+          { x: endPos.x, y: endPos.y - 30, z: endPos.z - 900 }
+        ]
+        const T = R.length - 2 // 攝影機從 t=0（起點）沿軌道走到 t=T（終點）
+
+        /* ---------- 在 3D 空間中擺放物件 ---------- */
+
+        // 卡片的停泊位：在自己節點的側邊，左右交錯；接近時才從畫面外飛進來
+        const side = cards.map((_, i) => (i % 2 ? -1 : 1))
+        const restPos: V3[] = new Array(N)
+        const restYaw: number[] = new Array(N)
+        cards.forEach((_, i) => {
+          // 面向軌道來向，迎接開過來的鏡頭
+          const t0 = sample(R, i + 0.85)
+          const t1 = sample(R, i + 1.15)
+          restYaw[i] = (Math.atan2(-(t1.x - t0.x), -(t1.z - t0.z)) * 180) / Math.PI
+          restPos[i] = {
+            x: stations[i].x + side[i] * 370 * LATERAL,
+            y: stations[i].y - 60,
+            z: stations[i].z
+          }
+        })
+
+        // 飛入動畫：fe=1 在畫面外遠處，fe=0 停回定位（只在數值有感變化時寫 DOM，避免閃爍）
+        const flyState: number[] = new Array(N).fill(-1)
+        const applyCard = (i: number, fe: number) => {
+          flyState[i] = fe
+          const p = restPos[i]
+          const ox = side[i] * 980 * LATERAL * fe
+          const oy = (i % 3 === 0 ? -340 : i % 3 === 1 ? 280 : -150) * fe
+          const rot = side[i] * 46 * fe
+          cards[i].style.transform =
+            `translate3d(${p.x + ox}px, ${p.y + oy}px, ${p.z}px) rotateY(${restYaw[i] + rot}deg)`
+        }
+        cards.forEach((_, i) => applyCard(i, 1))
+
+        // 開場標題放在軌道起點與第一站之間；終點文字放在攝影機停點前方
+        const titleP = sample(R, 0.5)
+        const endP = sample(R, T + 0.7)
+        intro.style.transform = `translate3d(${titleP.x}px, ${titleP.y - 60}px, ${titleP.z}px)`
+        endEl.style.transform = `translate3d(${endP.x}px, ${endP.y - 50}px, ${endP.z}px)`
+
+        // 月份標記：放在該月第一個節點的另一側
+        markerEls.forEach((el) => {
+          const c = stations[Number(el.dataset.index || 0)] || stations[0]
+          const ms = c.x >= 0 ? -1 : 1
+          el.style.transform = `translate3d(${c.x + ms * 620 * LATERAL}px, ${c.y - 190}px, ${c.z + 120}px) rotateY(${ms * 14}deg)`
+        })
+
+        // 地板
+        const floorDepth = Math.abs(endPos.z) + 6000
+        floor.style.height = `${floorDepth}px`
+        floor.style.transform = `translate3d(0, 300px, ${(1500 + endPos.z - 3000) / 2}px) rotateX(90deg)`
+        floor.style.marginTop = `${-floorDepth / 2}px`
+
+        // 發光軌道：沿曲線密集取樣，畫出平滑光軌
+        const frag = document.createDocumentFragment()
+        const addSeg = (a: V3, b: V3, cls: string) => {
+          const dx = b.x - a.x
+          const dy = b.y - a.y
+          const dz = b.z - a.z
+          const len = Math.hypot(dx, dy, dz)
+          const yaw = (Math.atan2(-dz, dx) * 180) / Math.PI
+          const pitch = (Math.asin(dy / len) * 180) / Math.PI
+          const seg = document.createElement('i')
+          seg.className = cls
+          seg.style.width = `${len}px`
+          seg.style.marginLeft = `${-len / 2}px`
+          seg.style.transform = `translate3d(${(a.x + b.x) / 2}px, ${(a.y + b.y) / 2}px, ${(a.z + b.z) / 2}px) rotateY(${yaw}deg) rotateZ(${pitch}deg)`
+          frag.appendChild(seg)
+        }
+        const STEPS = 7
+        let prevPt = sample(R, 0)
+        for (let s = 1; s <= T * STEPS; s++) {
+          const pt = sample(R, s / STEPS)
+          addSeg(prevPt, pt, 'fd-seg')
+          prevPt = pt
+        }
+        // 每篇文章的節點＋通往卡片的支線（支線提前收尾，避免刺穿卡片平面造成閃爍）
+        stations.forEach((st, i) => {
+          const node = document.createElement('i')
+          node.className = 'fd-node'
+          node.style.transform = `translate3d(${st.x}px, ${st.y}px, ${st.z}px)`
+          frag.appendChild(node)
+          const rp = restPos[i]
+          const dx = rp.x - st.x
+          const dy = rp.y - st.y
+          const len = Math.hypot(dx, dy) || 1
+          const cut = Math.max(0, (len - 150) / len)
+          addSeg(st, { x: st.x + dx * cut, y: st.y + dy * cut, z: st.z }, 'fd-seg fd-spur')
+        })
+
+        // 星空與星雲
+        for (let i = 0; i < 150; i++) {
+          const s = document.createElement('i')
+          s.className = 'fd-star'
+          const z = 900 - Math.random() * (Math.abs(endPos.z) + 3400)
+          const size = 1.5 + Math.random() * 2.5
+          s.style.width = `${size}px`
+          s.style.height = `${size}px`
+          s.style.opacity = `${0.25 + Math.random() * 0.7}`
+          s.style.transform = `translate3d(${(Math.random() - 0.5) * 3400}px, ${-950 + Math.random() * 1500}px, ${z}px)`
+          frag.appendChild(s)
+        }
+        const nebulaColors = [
+          'rgba(88,108,255,0.11)',
+          'rgba(107,229,255,0.08)',
+          'rgba(167,139,250,0.1)'
+        ]
+        for (let i = 0; i < 7; i++) {
+          const n = document.createElement('i')
+          n.className = 'fd-nebula'
+          n.style.background = `radial-gradient(circle, ${nebulaColors[i % 3]}, transparent 65%)`
+          n.style.transform = `translate3d(${(Math.random() - 0.5) * 2600}px, ${-500 + Math.random() * 700}px, ${-i * ((Math.abs(endPos.z) + 1500) / 7)}px)`
+          frag.appendChild(n)
+        }
+        world.appendChild(frag)
+
+        /* ---------- 攝影機：不切換角度，沿著軌道走 ---------- */
+
+        spacer.style.height = `${(T + 1) * 68}vh`
+
+        // 鍵盤導覽：Tab 到哪張卡片，鏡頭就沿軌道開到該站
+        cards.forEach((el, i) => {
+          el.addEventListener('focus', () => {
+            if (!el.matches(':focus-visible')) return
+            const maxScroll = Math.max(
+              document.documentElement.scrollHeight - window.innerHeight,
+              1
+            )
+            window.scrollTo(0, ((i + 1) / T) * maxScroll)
+          })
+        })
+
+        // 攝影機騎在軌道上方，視線望向軌道前方一小段
+        const CAM_LIFT = 150
+        const LOOK_AHEAD = 0.9
+        const camPosAt = (t: number): V3 => {
+          const p = sample(R, t)
+          return { x: p.x, y: p.y - CAM_LIFT, z: p.z }
+        }
+        const camTgtAt = (t: number): V3 => {
+          const p = sample(R, t + LOOK_AHEAD)
+          return { x: p.x, y: p.y - 90, z: p.z }
+        }
+
+        /* ---------- 主迴圈 ---------- */
+
+        const cam = { pos: camPosAt(0), tgt: camTgtAt(0) }
+        const lastOpacity: number[] = new Array(N).fill(-1)
+        const lastClickable: boolean[] = new Array(N).fill(true)
+        let lastIntroO = -1
+        let mouseX = 0
+        let mouseY = 0
+        let rawX = -1
+        let rawY = -1
+        let smX = 0
+        let smY = 0
+        let playing = false
+        let lastNow = performance.now()
+        let lastIdx = -2
+        let scrolled = false
+        let hoverIdx = -1
+        let hoverDirty = false
+        let lastScrollY = -1
+
+        window.addEventListener('pointermove', (e) => {
+          mouseX = (e.clientX / window.innerWidth - 0.5) * 2
+          mouseY = (e.clientY / window.innerHeight - 0.5) * 2
+          rawX = e.clientX
+          rawY = e.clientY
+          hoverDirty = true
+        })
+
+        // Chromium 對深景深 preserve-3d 場景的 hit-test 會整組失效（世界平面被推到
+        // 視點後方時，所有子元素都點不到），所以用投影後的邊界框自行路由點擊與 hover
+        const pickCard = (x: number, y: number): number => {
+          let best = -1
+          let bestO = 0
+          for (let i = 0; i < N; i++) {
+            if (!lastClickable[i]) continue
+            const r = cards[i].getBoundingClientRect()
+            if (
+              x >= r.left &&
+              x <= r.right &&
+              y >= r.top &&
+              y <= r.bottom &&
+              lastOpacity[i] > bestO
+            ) {
+              bestO = lastOpacity[i]
+              best = i
+            }
+          }
+          return best
+        }
+        stage.addEventListener('click', (e) => {
+          const target = e.target as HTMLElement
+          if (target.closest?.('.fd-card')) return // 原生 hit-test 有效時交給瀏覽器
+          const i = pickCard(e.clientX, e.clientY)
+          if (i < 0) return
+          const href = cards[i].getAttribute('href')
+          if (!href) return
+          if (e.metaKey || e.ctrlKey) window.open(href, '_blank')
+          else window.location.href = href
+        })
+
+        const stopPlaying = () => {
+          if (playing) {
+            playing = false
+            if (playBtn) playBtn.textContent = '▶ 自動運鏡'
+          }
+        }
+        if (playBtn) {
+          playBtn.addEventListener('click', () => {
+            playing = !playing
+            playBtn.textContent = playing ? '❚❚ 暫停' : '▶ 自動運鏡'
+          })
+        }
+        window.addEventListener('wheel', stopPlaying, { passive: true })
+        window.addEventListener('touchstart', stopPlaying, { passive: true })
+        window.addEventListener('keydown', stopPlaying)
+
+        const tick = (now: number) => {
+          const dt = Math.min((now - lastNow) / 1000, 0.05)
+          lastNow = now
+
+          const maxScroll = Math.max(document.documentElement.scrollHeight - window.innerHeight, 1)
+          if (playing) {
+            const next = window.scrollY + (maxScroll / 70) * dt // 全程約 70 秒
+            window.scrollTo(0, next)
+            if (next >= maxScroll) stopPlaying()
+          }
+
+          const p = clamp(window.scrollY / maxScroll, 0, 1)
+          const t = p * T
+
+          if (!scrolled && window.scrollY > 40 && hint) {
+            scrolled = true
+            hint.style.opacity = '0'
+          }
+
+          // 目標攝影機（軌道上的點）→ 慣性平滑
+          const dPos = camPosAt(t)
+          const dTgt = camTgtAt(t)
+          const k = 1 - Math.pow(0.002, dt)
+          cam.pos.x += (dPos.x - cam.pos.x) * k
+          cam.pos.y += (dPos.y - cam.pos.y) * k
+          cam.pos.z += (dPos.z - cam.pos.z) * k
+          cam.tgt.x += (dTgt.x - cam.tgt.x) * k
+          cam.tgt.y += (dTgt.y - cam.tgt.y) * k
+          cam.tgt.z += (dTgt.z - cam.tgt.z) * k
+          smX += (mouseX - smX) * k
+          smY += (mouseY - smY) * k
+
+          // 滑鼠視差（僅使用者驅動，攝影機本身不自己晃）
+          const camX = cam.pos.x + smX * 26
+          const camY = cam.pos.y + smY * 18
+
+          // look-at → yaw / pitch
+          const dx = cam.tgt.x - camX
+          const dy = cam.tgt.y - camY
+          const dz = cam.tgt.z - cam.pos.z
+          const len = Math.hypot(dx, dy, dz) || 1
+          const yaw = (Math.atan2(-dx, -dz) * 180) / Math.PI + smX * 2.5
+          const pitch = (Math.asin(clamp(dy / len, -1, 1)) * 180) / Math.PI + smY * 1.8
+
+          world.style.transform = `rotateX(${-pitch}deg) rotateY(${-yaw}deg) translate3d(${-camX}px, ${-camY}px, ${-cam.pos.z}px)`
+
+          // 快開到開場標題時讓它淡出讓路（有感變化才寫 DOM）
+          const introO = clamp((cam.pos.z - titleP.z + 260) / 400, 0, 1)
+          if (Math.abs(introO - lastIntroO) > 0.01) {
+            lastIntroO = introO
+            intro.style.opacity = introO.toFixed(3)
+          }
+
+          for (let i = 0; i < N; i++) {
+            const c = restPos[i]
+            const fd = cam.pos.z - c.z // > 0 表示卡片在前方
+
+            // 封面漸進載入：進入鏡頭前方一段距離才掛上真正的圖
+            if (!coverLoaded[i] && fd > -600 && fd < 3600) {
+              coverLoaded[i] = true
+              const img = covers[i]
+              if (img?.dataset.src) img.src = img.dataset.src
+            }
+
+            // 飛入：遠處在畫面外側，接近時滑進停泊位
+            const f = clamp((fd - 950) / 1800, 0, 1)
+            const fe = f * f * (3 - 2 * f)
+            if (Math.abs(fe - flyState[i]) > 0.003 || (fe === 0 && flyState[i] !== 0)) {
+              applyCard(i, fe)
+            }
+
+            // 深度霧化：越遠越淡、剛通過的卡片淡出
+            let o: number
+            if (fd < 140) o = clamp((fd + 260) / 400, 0, 1)
+            else {
+              const d = Math.hypot(c.x - camX, c.y - camY, fd)
+              o = clamp(1.18 - d / 3800, 0.05, 1)
+            }
+            // 鏡頭還沒穿過開場標題前，卡片退到背景別搶戲
+            o *= clamp(1 - (cam.pos.z - titleP.z) / 500, 0.12, 1)
+            // 固定走半透明渲染路徑（不碰到 1），且有感變化才寫，避免渲染路徑反覆切換造成閃爍
+            o = Math.min(o, 0.998)
+            if (Math.abs(o - lastOpacity[i]) > 0.015) {
+              lastOpacity[i] = o
+              cards[i].style.opacity = o.toFixed(3)
+            }
+            const clickable = o > 0.35
+            if (clickable !== lastClickable[i]) {
+              lastClickable[i] = clickable
+              cards[i].style.pointerEvents = clickable ? 'auto' : 'none'
+            }
+          }
+
+          // Hover 也走自製路由：滑鼠移動或畫面前進時重新挑選
+          if (window.scrollY !== lastScrollY) {
+            lastScrollY = window.scrollY
+            hoverDirty = true
+          }
+          if (hoverDirty) {
+            hoverDirty = false
+            const h = rawX < 0 ? -1 : pickCard(rawX, rawY)
+            if (h !== hoverIdx) {
+              if (hoverIdx >= 0) cards[hoverIdx].classList.remove('fd-hover')
+              if (h >= 0) cards[h].classList.add('fd-hover')
+              stage.style.cursor = h >= 0 ? 'pointer' : ''
+              hoverIdx = h
+            }
+          }
+
+          // HUD：顯示目前經過的節點
+          progressBar.style.width = `${(p * 100).toFixed(2)}%`
+          const si = Math.round(t) - 1
+          if (si !== lastIdx) {
+            lastIdx = si
+            if (si < 0) {
+              readout.textContent = 'story.dbb.tw · 故事時間軸'
+              counter.textContent = `${N} STORIES`
+            } else if (si >= N) {
+              readout.textContent = '未完待續⋯'
+              counter.textContent = `${N} / ${N}`
+            } else {
+              readout.textContent = `${dates[si]} · 新增了《${cards[si].dataset.title}》`
+              counter.textContent = `${si + 1} / ${N}`
+            }
+          }
+
+          requestAnimationFrame(tick)
+        }
+        requestAnimationFrame(tick)
+      }
+    </script>
+  </body>
+</html>
