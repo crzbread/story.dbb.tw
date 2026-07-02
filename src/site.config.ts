@@ -50,6 +50,7 @@ export const theme: ThemeUserConfig = {
     menu: [
       { title: '文章', link: '/blog' },
       { title: '標籤', link: '/tags' },
+      { title: '時間軸', link: '/timeline' },
       { title: 'dbb.tw ↗', link: 'https://dbb.tw' }
     ]
   },

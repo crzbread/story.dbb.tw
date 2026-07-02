@@ -1,0 +1,1048 @@
+---
+import { getImage } from 'astro:assets'
+
+import { getBlogCollection } from 'astro-pure/server'
+import PageLayout from '@/layouts/BaseLayout.astro'
+import { formatTimelineDate, normalizeBlogPost, sortBlogPosts } from '@/utils/blog'
+
+import { bookSettings, bookText } from '../timeline.config'
+
+export const prerender = true
+
+// 讀取全部文章（build 時執行）：之後新增文章、重新 build 就會自動裝訂進這本書
+const collection = await getBlogCollection()
+const posts = sortBlogPosts(collection.map(normalizeBlogPost)).reverse() // 由舊到新
+
+const entries = await Promise.all(
+  posts.map(async (post, index) => {
+    let cover: string | null = null
+    if (post.data.heroImage?.src) {
+      const img = await getImage({ src: post.data.heroImage.src, width: 640, format: 'webp' })
+      cover = img.src
+    }
+    return {
+      index,
+      title: post.data.title,
+      description: post.data.description,
+      date: formatTimelineDate(post.data.publishDate),
+      tags: post.data.tags ?? [],
+      url: `/blog/${post.id}`,
+      featured: post.data.featured ?? false,
+      cover
+    }
+  })
+)
+
+// 文案裡的 {count} 代換成文章總數
+const fill = (text: string) => text.replaceAll('{count}', String(entries.length))
+
+type Entry = (typeof entries)[number]
+type Page =
+  | { kind: 'cover' }
+  | { kind: 'intro-l' }
+  | { kind: 'intro-r' }
+  | { kind: 'post-img'; post: Entry }
+  | { kind: 'post-text'; post: Entry }
+  | { kind: 'fin-l' }
+  | { kind: 'fin-r' }
+  | { kind: 'back' }
+
+// 書頁配置：每篇文章占一個完整跨頁（左頁圖、右頁文），最後補「未完待續」與封底。
+// 偶數頁是紙張正面（右頁）、奇數頁是背面（左頁）；總頁數天然是偶數，封底剛好是最後一張的背面。
+const pages: Page[] = [
+  { kind: 'cover' },
+  { kind: 'intro-l' },
+  { kind: 'intro-r' },
+  ...entries.flatMap((post): Page[] => [
+    { kind: 'post-img', post },
+    { kind: 'post-text', post }
+  ]),
+  { kind: 'fin-l' },
+  { kind: 'fin-r' },
+  { kind: 'back' }
+]
+
+// 一張紙有正反兩面：正面是右頁、翻過去變左頁
+const sheets: Page[][] = []
+for (let i = 0; i < pages.length; i += 2) sheets.push([pages[i], pages[i + 1]])
+
+const pageLabel = (page: Page): string => {
+  switch (page.kind) {
+    case 'cover':
+      return '封面'
+    case 'intro-l':
+    case 'intro-r':
+      return '序'
+    case 'post-img':
+    case 'post-text':
+      return `${page.post.date} ·《${page.post.title}》`
+    case 'fin-l':
+    case 'fin-r':
+      return '未完待續'
+    case 'back':
+      return '封底'
+  }
+}
+
+const meta = {
+  title: bookText.pageTitle,
+  description: bookText.pageDescription
+}
+---
+
+<PageLayout {meta} highlightColor='#C9A24B'>
+  <main class='tl-page'>
+    <section
+      class='book-panel'
+      aria-labelledby='tl-page-title'
+      style={`--flip-ms: ${bookSettings.flipMs}ms;`}
+    >
+      <header class='panel-head'>
+        <h1 id='tl-page-title'>
+          {bookText.masthead.title}
+          <span class='hl'>{bookText.masthead.highlight}</span>
+        </h1>
+        <p class='sub'>{bookText.masthead.sub}</p>
+      </header>
+
+      <!-- 出版時間軸：每個點是一篇文章，點下去直接翻到那一頁 -->
+      <nav class='timeline' id='tl-page-timeline' aria-label='文章發佈時間軸'>
+        <span class='tl-edge'>{entries[0]?.date}</span>
+        <div class='tl-track'>
+          <div class='tl-line'><i id='tl-fill'></i></div>
+          {
+            entries.map((post) => (
+              <button
+                class:list={['tl-dot', { featured: post.featured }]}
+                data-post={post.index}
+                aria-label={`${post.date} ${post.title}${post.featured ? '（精選）' : ''}`}
+              >
+                <span class='tl-tip'>
+                  <b>{post.date}</b>
+                  {post.featured ? `★ ${post.title}` : post.title}
+                </span>
+              </button>
+            ))
+          }
+        </div>
+        <span class='tl-edge'>{entries.at(-1)?.date}</span>
+      </nav>
+
+      <div class='stage' id='tl-page-stage'>
+        <div class='book-shift' id='book-shift'>
+          <div
+            class='book'
+            id='book'
+            data-sheets={sheets.length}
+            data-stagger={bookSettings.staggerMs}
+            data-auto={bookSettings.autoFlipMs}
+          >
+            {
+              sheets.map((sheet, si) => (
+                <div class='sheet' data-index={si}>
+                  {sheet.map((page, fi) => (
+                    <div
+                      class={`face ${fi === 0 ? 'front' : 'back'} kind-${page.kind}`}
+                      data-label={pageLabel(page)}
+                    >
+                      {page.kind === 'cover' && (
+                        <div class='cover-inner'>
+                          <p class='kicker'>{bookText.cover.kicker}</p>
+                          <h2 class='cover-title'>
+                            {bookText.cover.titleLines.map((line, li) => (
+                              <>
+                                {li > 0 && <br />}
+                                {line}
+                              </>
+                            ))}
+                          </h2>
+                          <div class='cover-rule' />
+                          <p class='cover-sub'>{fill(bookText.cover.sub)}</p>
+                        </div>
+                      )}
+                      {page.kind === 'intro-l' && (
+                        <div class='paper intro'>
+                          <h3>{bookText.introLeft.heading}</h3>
+                          <p>{fill(bookText.introLeft.body)}</p>
+                        </div>
+                      )}
+                      {page.kind === 'intro-r' && (
+                        <div class='paper intro'>
+                          <p>{fill(bookText.introRight.body)}</p>
+                          <p class='muted'>{fill(bookText.introRight.note)}</p>
+                        </div>
+                      )}
+                      {page.kind === 'post-img' && (
+                        <figure class='plate'>
+                          {page.post.cover ? (
+                            <a href={page.post.url} tabindex='-1'>
+                              <img
+                                src={page.post.cover}
+                                alt={page.post.title}
+                                loading='lazy'
+                                decoding='async'
+                              />
+                            </a>
+                          ) : (
+                            <div class='plate-blank'>❧</div>
+                          )}
+                          <figcaption>{page.post.date}</figcaption>
+                        </figure>
+                      )}
+                      {page.kind === 'post-text' && (
+                        <article class='paper entry'>
+                          {page.post.featured && (
+                            <span class='bookmark'>★ {bookText.featuredBadge}</span>
+                          )}
+                          <p class='entry-date'>{page.post.date}</p>
+                          <h3 class='entry-title'>
+                            <a href={page.post.url}>{page.post.title}</a>
+                          </h3>
+                          <p class='entry-desc'>{page.post.description}</p>
+                          <p class='entry-tags'>{page.post.tags.map((t) => `#${t}`).join('　')}</p>
+                          <a class='entry-more' href={page.post.url}>
+                            閱讀全文 →
+                          </a>
+                          <span class='folio'>
+                            {page.post.index + 1} / {entries.length}
+                          </span>
+                        </article>
+                      )}
+                      {page.kind === 'fin-l' && (
+                        <div class='paper fin'>
+                          <h3>{bookText.finLeft.heading}</h3>
+                          <p class='muted'>{fill(bookText.finLeft.note)}</p>
+                        </div>
+                      )}
+                      {page.kind === 'fin-r' && (
+                        <div class='paper fin'>
+                          <p class='muted'>{fill(bookText.finRight.note)}</p>
+                          <a class='entry-more' href='/blog'>
+                            {bookText.finRight.linkText}
+                          </a>
+                        </div>
+                      )}
+                      {page.kind === 'back' && (
+                        <div class='cover-inner backcover'>
+                          <p class='cover-sub'>{fill(bookText.backCover.sub)}</p>
+                          <p class='kicker'>{bookText.backCover.kicker}</p>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ))
+            }
+          </div>
+        </div>
+      </div>
+
+      <div class='controls' id='tl-page-controls'>
+        <button id='btn-prev' class='ctrl' aria-label='上一頁'>‹</button>
+        <button id='btn-auto' class='ctrl auto' aria-pressed='false'>
+          <span class='ico'>▶</span> 自動翻頁
+        </button>
+        <button id='btn-next' class='ctrl' aria-label='下一頁'>›</button>
+        <p id='indicator' class='indicator' aria-live='polite'>封面</p>
+      </div>
+
+      <!-- 無 JS 退路：隱藏書本，顯示扁平時間軸清單 -->
+      <noscript>
+        <style is:inline>
+          #tl-page-stage,
+          #tl-page-controls,
+          #tl-page-timeline {
+            display: none !important;
+          }
+          #tl-page-fallback {
+            display: block !important;
+          }
+        </style>
+      </noscript>
+      <section id='tl-page-fallback' class='fallback' aria-label='文章發佈時間軸（清單）'>
+        <ol>
+          {
+            entries.map((post) => (
+              <li>
+                <time datetime={post.date}>{post.date}</time>
+                <a href={post.url}>
+                  {post.title}
+                  {post.featured && ` ★ ${bookText.featuredBadge}`}
+                </a>
+                <p>{post.description}</p>
+              </li>
+            ))
+          }
+        </ol>
+      </section>
+    </section>
+  </main>
+
+  <script>
+    const book = document.getElementById('book')!
+    const shift = document.getElementById('book-shift')!
+    const stage = document.getElementById('tl-page-stage')!
+    const panel = document.querySelector('.book-panel')!
+    const sheets = [...book.querySelectorAll<HTMLElement>('.sheet')]
+    const dots = [...document.querySelectorAll<HTMLElement>('.tl-dot')]
+    const fill = document.getElementById('tl-fill')!
+    const indicator = document.getElementById('indicator')!
+    const btnPrev = document.getElementById('btn-prev')!
+    const btnNext = document.getElementById('btn-next')!
+    const btnAuto = document.getElementById('btn-auto')!
+
+    const S = sheets.length
+    // 速度參數來自 timeline.config.ts（經由 data-* 屬性傳入）
+    const STAGGER_MS = Number(book.dataset.stagger) || 130
+    const AUTO_MS = Number(book.dataset.auto) || 3600
+    let current = 0 // 已翻過去的紙張數：0 = 封面，S = 封底
+    let pending: ReturnType<typeof setTimeout>[] = []
+    let seq = 0
+
+    // 窄直式螢幕時整本書被轉了 90°，點擊的軸向要跟著換
+    const rotatedMq = matchMedia('(orientation: portrait) and (width < 440px)')
+
+    const baseZ = (el: HTMLElement, i: number) =>
+      String(el.classList.contains('flipped') ? i + 1 : S - i)
+
+    sheets.forEach((el, i) => {
+      el.style.zIndex = baseZ(el, i)
+      el.addEventListener('transitionend', (e) => {
+        if (e.propertyName === 'transform') el.style.zIndex = baseZ(el, i)
+      })
+    })
+
+    function flipSheet(i: number, flipped: boolean) {
+      const el = sheets[i]
+      if (el.classList.contains('flipped') === flipped) return
+      el.style.zIndex = String(S + 2 + seq++) // 動畫期間壓在最上層，翻完落回原位
+      el.classList.toggle('flipped', flipped)
+    }
+
+    function goTo(target: number) {
+      target = Math.max(0, Math.min(S, target))
+      pending.forEach(clearTimeout)
+      pending = []
+      seq = 0
+      if (target > current) {
+        for (let i = current; i < target; i++) {
+          const k = i - current
+          pending.push(setTimeout(() => flipSheet(i, true), k * STAGGER_MS))
+        }
+      } else {
+        for (let i = current - 1; i >= target; i--) {
+          const k = current - 1 - i
+          pending.push(setTimeout(() => flipSheet(i, false), k * STAGGER_MS))
+        }
+      }
+      current = target
+      updateUI()
+    }
+
+    const next = () => goTo(current + 1)
+    const prev = () => goTo(current - 1)
+
+    function updateUI() {
+      shift.classList.toggle('at-cover', current === 0)
+      shift.classList.toggle('at-end', current === S)
+
+      // 跨頁 c 攤開的是第 2c-1（左）與 2c（右）頁；第 p 篇文章占跨頁 p+2
+      const activePost = current - 2
+      dots.forEach((dot, p) => {
+        dot.classList.toggle('active', p === activePost)
+        dot.classList.toggle('passed', p < activePost)
+      })
+      const seen = Math.max(0, Math.min(dots.length, current - 1))
+      fill.style.width = dots.length ? `${(seen / dots.length) * 100}%` : '0%'
+
+      const faces = book.querySelectorAll<HTMLElement>('.face')
+      const label = faces[current * 2]?.dataset.label || faces[current * 2 - 1]?.dataset.label
+      indicator.textContent = current === 0 ? '封面' : `${label}（${current} / ${S} 跨頁）`
+    }
+
+    // ---------- 自動翻頁 ----------
+    let autoTimer: ReturnType<typeof setInterval> | null = null
+    function stopAuto() {
+      if (!autoTimer) return
+      clearInterval(autoTimer)
+      autoTimer = null
+      btnAuto.setAttribute('aria-pressed', 'false')
+      btnAuto.innerHTML = '<span class="ico">▶</span> 自動翻頁'
+    }
+    function startAuto() {
+      stopAuto()
+      autoTimer = setInterval(() => {
+        if (current >= S)
+          goTo(0) // 翻到封底後整本倒回封面，繼續播
+        else goTo(current + 1)
+      }, AUTO_MS)
+      btnAuto.setAttribute('aria-pressed', 'true')
+      btnAuto.innerHTML = '<span class="ico">⏸</span> 翻頁中'
+      if (current >= S) goTo(0)
+      else goTo(current + 1)
+    }
+    btnAuto.addEventListener('click', () => (autoTimer ? stopAuto() : startAuto()))
+
+    const manual = (fn: () => void) => () => {
+      stopAuto()
+      fn()
+    }
+
+    btnNext.addEventListener('click', manual(next))
+    btnPrev.addEventListener('click', manual(prev))
+
+    // 點書頁翻頁（點到連結時放行）；書被轉 90° 時右頁在畫面下半部
+    // 為了能選取／複製書頁文字：拖曳選字（位移 > 6px）或畫面上還有選取範圍時不翻頁
+    let pressAt: { x: number; y: number } | null = null
+    book.addEventListener('pointerdown', (e) => {
+      pressAt = { x: e.clientX, y: e.clientY }
+    })
+    book.addEventListener('click', (e) => {
+      if ((e.target as HTMLElement).closest('a')) return
+      const sel = document.getSelection()
+      if (sel && !sel.isCollapsed && sel.toString().length > 0) return
+      if (pressAt && Math.hypot(e.clientX - pressAt.x, e.clientY - pressAt.y) > 6) return
+      stopAuto()
+      const rect = book.getBoundingClientRect()
+      const forward = rotatedMq.matches
+        ? e.clientY - rect.top > rect.height / 2
+        : e.clientX - rect.left > rect.width / 2
+      if (forward) next()
+      else prev()
+    })
+
+    // 時間軸跳頁：第 p 篇文章在跨頁 p+2
+    dots.forEach((dot) => {
+      dot.addEventListener(
+        'click',
+        manual(() => goTo(Number(dot.dataset.post) + 2))
+      )
+    })
+
+    // 鍵盤：只在書本進到視野內時攔截方向鍵（頁面其他區塊不受影響）
+    let panelVisible = false
+    const visibility = new IntersectionObserver(
+      ([entry]) => {
+        panelVisible = entry.isIntersecting
+      },
+      { threshold: 0.2 }
+    )
+    visibility.observe(panel)
+
+    const onKeydown = (e: KeyboardEvent) => {
+      if (!panelVisible || e.metaKey || e.ctrlKey || e.altKey) return
+      const target = e.target as HTMLElement
+      if (target.closest('input, textarea, select, [contenteditable]')) return
+      if (e.key === 'ArrowRight') manual(next)()
+      else if (e.key === 'ArrowLeft') manual(prev)()
+    }
+    window.addEventListener('keydown', onKeydown)
+
+    // 觸控滑動：只掛在書的區域、且水平位移明顯大於垂直才翻頁（不干擾頁面捲動）。
+    // 轉 90° 模式不做滑動翻頁（垂直滑動保留給捲動），點上下半頁即可翻。
+    let touch: { x: number; y: number } | null = null
+    stage.addEventListener(
+      'touchstart',
+      (e) => {
+        touch = { x: e.touches[0].clientX, y: e.touches[0].clientY }
+      },
+      { passive: true }
+    )
+    stage.addEventListener(
+      'touchend',
+      (e) => {
+        if (!touch || rotatedMq.matches) return
+        const dx = e.changedTouches[0].clientX - touch.x
+        const dy = e.changedTouches[0].clientY - touch.y
+        touch = null
+        if (Math.abs(dx) < 42 || Math.abs(dx) < Math.abs(dy) * 1.2) return
+        stopAuto()
+        if (dx < 0) next()
+        else prev()
+      },
+      { passive: true }
+    )
+
+    // 換頁（view transitions）或離開前收乾淨計時器與觀察器
+    document.addEventListener('astro:before-swap', () => {
+      stopAuto()
+      pending.forEach(clearTimeout)
+      visibility.disconnect()
+      window.removeEventListener('keydown', onKeydown)
+    })
+
+    updateUI()
+  </script>
+
+  <style>
+    .tl-page {
+      width: 100%;
+      padding: 0 0 1rem;
+    }
+
+    /* ---------- 版面（跟站內主題走） ---------- */
+    .book-panel {
+      /* 書本身的固定用色（實體書不隨深淺色變） */
+      --paper: #f4ecda;
+      --paper-2: #ece1c8;
+      --paper-ink: #3b2f1e;
+      --gold: #c9a24b;
+      --seal: #c04f4a;
+
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: clamp(0.9rem, 2vw, 1.4rem);
+      padding: clamp(1.1rem, 3vw, 2rem) clamp(0.75rem, 3vw, 2rem) clamp(1.3rem, 3vw, 2rem);
+      border: 1px solid hsl(var(--border));
+      border-radius: var(--radius);
+      background:
+        radial-gradient(640px 300px at 50% -8%, hsl(43 55% 52% / 0.09), transparent 70%),
+        hsl(var(--muted) / 0.45);
+      overflow: hidden;
+    }
+
+    .panel-head {
+      text-align: center;
+    }
+    .panel-head h1 {
+      margin: 0;
+      font-size: clamp(1.25rem, 3.2vw, 1.65rem);
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      color: hsl(var(--foreground));
+    }
+    .panel-head .hl {
+      color: var(--gold);
+    }
+    .panel-head .sub {
+      margin: 0.4rem 0 0;
+      font-size: clamp(0.7rem, 1.8vw, 0.8rem);
+      color: hsl(var(--muted-foreground));
+      letter-spacing: 0.06em;
+    }
+
+    /* ---------- 時間軸 ---------- */
+    .timeline {
+      display: flex;
+      align-items: center;
+      gap: 0.7rem;
+      width: min(100%, 860px);
+    }
+    .tl-edge {
+      font-size: 0.66rem;
+      letter-spacing: 0.06em;
+      color: hsl(var(--muted-foreground));
+      white-space: nowrap;
+      font-variant-numeric: tabular-nums;
+    }
+    .tl-track {
+      position: relative;
+      flex: 1;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      height: 30px;
+    }
+    .tl-line {
+      position: absolute;
+      inset: 50% 0 auto;
+      height: 2px;
+      translate: 0 -50%;
+      background: hsl(var(--border));
+      overflow: hidden;
+      border-radius: 2px;
+      pointer-events: none;
+    }
+    .tl-line i {
+      display: block;
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, var(--gold), hsl(var(--primary)));
+      transition: width 0.5s ease;
+    }
+    .tl-dot {
+      position: relative;
+      z-index: 1;
+      width: 18px;
+      height: 30px;
+      margin: 0 -4px;
+      padding: 0;
+      border: 0;
+      background: none;
+      cursor: pointer;
+      display: grid;
+      place-items: center;
+    }
+    .tl-dot::before {
+      content: '';
+      width: 7px;
+      height: 7px;
+      rotate: 45deg;
+      background: hsl(var(--muted-foreground) / 0.5);
+      outline: 2px solid hsl(var(--background));
+      transition:
+        background 0.3s,
+        scale 0.3s;
+    }
+    .tl-dot:hover::before {
+      background: var(--gold);
+      scale: 1.35;
+    }
+    .tl-dot.passed::before {
+      background: var(--gold);
+    }
+    /* 精選文章：金色大點＋光暈 */
+    .tl-dot.featured::before {
+      width: 10px;
+      height: 10px;
+      background: var(--gold);
+      box-shadow: 0 0 10px hsl(43 55% 52% / 0.75);
+    }
+    .tl-dot.active::before {
+      background: hsl(var(--primary));
+      scale: 1.6;
+      box-shadow: 0 0 12px hsl(var(--primary) / 0.8);
+    }
+    .tl-tip {
+      position: absolute;
+      bottom: calc(100% + 2px);
+      left: 50%;
+      translate: -50% 4px;
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+      padding: 0.35rem 0.55rem;
+      max-width: 200px;
+      width: max-content;
+      background: hsl(var(--background));
+      border: 1px solid hsl(var(--border));
+      border-radius: calc(var(--radius) - 2px);
+      color: hsl(var(--foreground));
+      font-size: 0.66rem;
+      line-height: 1.4;
+      opacity: 0;
+      pointer-events: none;
+      transition:
+        opacity 0.2s,
+        translate 0.2s;
+      white-space: normal;
+      z-index: 5;
+    }
+    .tl-tip b {
+      color: var(--gold);
+      font-variant-numeric: tabular-nums;
+    }
+    .tl-dot:hover .tl-tip,
+    .tl-dot:focus-visible .tl-tip {
+      opacity: 1;
+      translate: -50% 0;
+    }
+
+    /* ---------- 書 ---------- */
+    .stage {
+      width: 100%;
+      container-type: inline-size;
+    }
+    .book-shift {
+      width: 100%;
+      transition: translate var(--flip-ms, 1s) cubic-bezier(0.4, 0.05, 0.2, 1);
+    }
+    .book-shift.at-cover {
+      translate: -12% 0;
+    }
+    .book-shift.at-end {
+      translate: 12% 0;
+    }
+    .book {
+      position: relative;
+      width: min(100%, 860px);
+      margin-inline: auto;
+      aspect-ratio: 3 / 2;
+      perspective: 2600px;
+      font-family: Georgia, 'Noto Serif TC', 'Songti TC', 'PingFang TC', serif;
+      filter: drop-shadow(0 20px 28px rgb(0 0 0 / 0.4));
+    }
+    /* 書口的紙頁層疊感 */
+    .book::before,
+    .book::after {
+      content: '';
+      position: absolute;
+      top: 1.5%;
+      bottom: 1.5%;
+      width: 8px;
+      background: repeating-linear-gradient(90deg, var(--paper-2) 0 1px, #d9cba7 1px 2px);
+      z-index: 0;
+    }
+    .book::before {
+      left: calc(50% - 8px);
+      border-radius: 3px 0 0 3px;
+    }
+    .book::after {
+      left: 50%;
+      border-radius: 0 3px 3px 0;
+    }
+
+    .sheet {
+      position: absolute;
+      inset: 0 0 0 50%;
+      transform-origin: left center;
+      transform-style: preserve-3d;
+      transition: transform var(--flip-ms, 1s) cubic-bezier(0.4, 0.05, 0.2, 1);
+    }
+    .sheet.flipped {
+      transform: rotateY(-180deg);
+    }
+
+    .face {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+      backface-visibility: hidden;
+      -webkit-backface-visibility: hidden;
+      background:
+        linear-gradient(105deg, rgb(59 47 30 / 0.22), transparent 9%),
+        radial-gradient(120% 100% at 100% 0%, var(--paper) 60%, var(--paper-2) 100%);
+      color: var(--paper-ink);
+      border-radius: 0 6px 6px 0;
+      box-shadow: inset 0 0 40px rgb(120 95 50 / 0.12);
+    }
+    .face.back {
+      transform: rotateY(180deg);
+      border-radius: 6px 0 0 6px;
+      background:
+        linear-gradient(-105deg, rgb(59 47 30 / 0.22), transparent 9%),
+        radial-gradient(120% 100% at 0% 0%, var(--paper) 60%, var(--paper-2) 100%);
+    }
+
+    /* 封面與封底：布面精裝 */
+    .face.kind-cover,
+    .face.kind-back {
+      background: radial-gradient(130% 110% at 30% 0%, #7d2f36 0%, #571f27 55%, #3f151d 100%);
+      box-shadow:
+        inset 0 0 0 2px rgb(201 162 75 / 0.55),
+        inset 0 0 60px rgb(0 0 0 / 0.5);
+    }
+    .cover-inner {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: clamp(0.5rem, 2.2cqi, 1.2rem);
+      text-align: center;
+      border: 1px solid rgb(201 162 75 / 0.5);
+      margin: 6%;
+      height: 88%;
+      padding: 6%;
+    }
+    .kicker {
+      margin: 0;
+      letter-spacing: 0.34em;
+      font-size: clamp(0.55rem, 1.2cqi, 0.75rem);
+      color: rgb(201 162 75 / 0.85);
+      text-transform: uppercase;
+    }
+    .cover-title {
+      margin: 0;
+      font-size: clamp(1.4rem, 5cqi, 3.2rem);
+      line-height: 1.25;
+      letter-spacing: 0.18em;
+      font-weight: 600;
+      color: #e9d9ae;
+      text-shadow: 0 1px 0 rgb(0 0 0 / 0.6);
+    }
+    .cover-rule {
+      width: 34%;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--gold), transparent);
+    }
+    .cover-sub {
+      margin: 0;
+      letter-spacing: 0.3em;
+      font-size: clamp(0.5rem, 1.1cqi, 0.7rem);
+      color: rgb(233 217 174 / 0.75);
+    }
+    .backcover .cover-sub {
+      font-size: clamp(0.65rem, 1.5cqi, 0.95rem);
+    }
+
+    /* 內頁 */
+    .paper {
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: clamp(0.35rem, 1.6cqi, 0.8rem);
+      padding: clamp(0.9rem, 4.5cqi, 2.6rem);
+      font-size: clamp(0.72rem, 1.6cqi, 0.98rem);
+      line-height: 1.8;
+    }
+    .paper h3 {
+      margin: 0;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+    }
+    .intro h3,
+    .fin h3 {
+      font-size: clamp(1rem, 2.6cqi, 1.5rem);
+      letter-spacing: 0.4em;
+    }
+    .intro p,
+    .fin p {
+      margin: 0;
+      text-align: justify;
+    }
+    .fin {
+      align-items: center;
+      text-align: center;
+    }
+    .muted {
+      color: rgb(59 47 30 / 0.55);
+      font-size: 0.85em;
+    }
+
+    /* 左頁：整頁插圖 */
+    .plate {
+      height: 100%;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: clamp(0.4rem, 1.6cqi, 0.9rem);
+      padding: clamp(0.9rem, 4.5cqi, 2.4rem);
+    }
+    .plate a {
+      display: block;
+      min-height: 0;
+      flex-shrink: 1;
+    }
+    .plate img {
+      display: block;
+      width: 100%;
+      height: 100%;
+      max-height: clamp(120px, 58cqi, 460px);
+      object-fit: cover;
+      border: 1px solid rgb(59 47 30 / 0.35);
+      box-shadow: 3px 4px 0 rgb(59 47 30 / 0.15);
+      filter: sepia(0.14);
+    }
+    .plate-blank {
+      display: grid;
+      place-items: center;
+      height: 100%;
+      font-size: clamp(2rem, 8cqi, 5rem);
+      color: rgb(59 47 30 / 0.25);
+    }
+    .plate figcaption {
+      text-align: center;
+      font-size: clamp(0.58rem, 1.2cqi, 0.75rem);
+      letter-spacing: 0.24em;
+      color: rgb(59 47 30 / 0.5);
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* 右頁：文章開場 */
+    .entry {
+      position: relative;
+    }
+    /* 精選文章的緞帶書籤 */
+    .bookmark {
+      position: absolute;
+      top: 0;
+      right: 9%;
+      writing-mode: vertical-rl;
+      background: linear-gradient(180deg, #a8403c, var(--seal));
+      color: #f4ecda;
+      padding: 0.8em 0.34em 1.1em;
+      font-size: clamp(0.5rem, 1.15cqi, 0.72rem);
+      letter-spacing: 0.28em;
+      clip-path: polygon(0 0, 100% 0, 100% 100%, 50% calc(100% - 0.6em), 0 100%);
+      box-shadow: 0 2px 4px rgb(59 47 30 / 0.35);
+    }
+    .entry-date {
+      margin: 0;
+      font-size: clamp(0.58rem, 1.2cqi, 0.75rem);
+      letter-spacing: 0.22em;
+      color: var(--seal);
+      font-variant-numeric: tabular-nums;
+    }
+    .entry-title {
+      font-size: clamp(0.95rem, 2.4cqi, 1.5rem);
+      line-height: 1.45;
+    }
+    .entry-title a {
+      color: var(--paper-ink);
+      text-decoration: none;
+      background: linear-gradient(90deg, rgb(201 162 75 / 0.55), rgb(201 162 75 / 0.55)) no-repeat
+        left 100% / 100% 2px;
+    }
+    .entry-title a:hover {
+      color: var(--seal);
+    }
+    .entry-desc {
+      margin: 0;
+      text-align: justify;
+      display: -webkit-box;
+      -webkit-line-clamp: 7;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .entry-tags {
+      margin: 0;
+      font-size: 0.78em;
+      color: rgb(59 47 30 / 0.55);
+    }
+    .entry-more {
+      color: var(--seal);
+      text-decoration: none;
+      font-size: 0.85em;
+      width: fit-content;
+    }
+    .entry-more:hover {
+      text-decoration: underline;
+    }
+    .folio {
+      position: absolute;
+      bottom: clamp(0.4rem, 1.6cqi, 1rem);
+      right: clamp(0.8rem, 3cqi, 2rem);
+      font-size: clamp(0.52rem, 1cqi, 0.68rem);
+      color: rgb(59 47 30 / 0.45);
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* ---------- 控制列 ---------- */
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .ctrl {
+      min-width: 44px;
+      height: 38px;
+      padding: 0 0.9rem;
+      border: 1px solid hsl(var(--border));
+      border-radius: calc(var(--radius) - 2px);
+      background: hsl(var(--muted) / 0.4);
+      color: hsl(var(--foreground));
+      font-family: inherit;
+      font-size: 1rem;
+      letter-spacing: 0.08em;
+      cursor: pointer;
+      transition:
+        background 0.25s,
+        border-color 0.25s;
+    }
+    .ctrl:hover {
+      background: hsl(var(--muted));
+      border-color: var(--gold);
+    }
+    .ctrl.auto {
+      font-size: 0.8rem;
+    }
+    .ctrl.auto .ico {
+      color: var(--gold);
+      font-size: 0.7rem;
+    }
+    .ctrl.auto[aria-pressed='true'] {
+      background: hsl(var(--primary) / 0.12);
+      border-color: hsl(var(--primary));
+    }
+    .ctrl.auto[aria-pressed='true'] .ico {
+      color: hsl(var(--primary));
+    }
+    .indicator {
+      width: 100%;
+      margin: 0;
+      text-align: center;
+      font-size: 0.72rem;
+      letter-spacing: 0.08em;
+      color: hsl(var(--muted-foreground));
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* ---------- 無 JS 退路清單（預設隱藏，noscript 時打開） ---------- */
+    .fallback {
+      display: none;
+      width: min(100%, 640px);
+    }
+    .fallback ol {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+    .fallback time {
+      font-size: 0.72rem;
+      letter-spacing: 0.1em;
+      color: hsl(var(--muted-foreground));
+      font-variant-numeric: tabular-nums;
+    }
+    .fallback a {
+      display: block;
+      color: hsl(var(--foreground));
+      font-weight: 600;
+      text-decoration: none;
+    }
+    .fallback a:hover {
+      color: hsl(var(--primary));
+    }
+    .fallback p {
+      margin: 0.2rem 0 0;
+      font-size: 0.82rem;
+      color: hsl(var(--muted-foreground));
+    }
+
+    /* ---------- RWD ---------- */
+    @media (width < 700px) {
+      .tl-edge {
+        display: none;
+      }
+      .panel-head .sub {
+        display: none;
+      }
+      .book {
+        aspect-ratio: 4 / 3;
+      }
+      .entry-desc {
+        -webkit-line-clamp: 5;
+      }
+    }
+
+    /* 直式窄螢幕：整本書轉 90° 變橫的，把手機轉過來讀 */
+    @media (orientation: portrait) and (width < 440px) {
+      .stage {
+        --rot-w: min(118vw, 76svh);
+        height: var(--rot-w);
+        overflow: visible;
+      }
+      .book-shift.at-cover,
+      .book-shift.at-end {
+        translate: 0 0;
+      }
+      .book {
+        rotate: 90deg;
+        width: var(--rot-w);
+        aspect-ratio: 3 / 2;
+        /* 書的 CSS 盒比容器寬，margin auto 會失效；用負邊距讓它水平置中 */
+        margin-left: calc((100% - var(--rot-w)) / 2);
+        margin-right: 0;
+      }
+      .entry-desc {
+        -webkit-line-clamp: 4;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .sheet,
+      .book-shift,
+      .tl-line i {
+        transition-duration: 0.01s;
+      }
+    }
+  </style>
+</PageLayout>
