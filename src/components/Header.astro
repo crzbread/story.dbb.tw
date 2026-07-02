@@ -83,7 +83,7 @@ import { Icon } from 'astro-pure/user'
       // Dark Mode
       const darkModeBtn = this.querySelector('#toggleDarkMode') as HTMLElement
       darkModeBtn.addEventListener('click', () => {
-        const newTheme = getNextTheme(document.documentElement.classList.contains('dark'))
+        const newTheme = getNextTheme(darkModeBtn.dataset.theme)
         setTheme(newTheme, true)
         darkModeBtn.dataset.theme = newTheme
         showToast({ message: `Set theme to ${newTheme}` })

@@ -3,10 +3,19 @@ import test from 'node:test'
 
 import { getNextTheme } from './theme.ts'
 
-test('switches from the currently rendered dark theme to light', () => {
-  assert.equal(getNextTheme(true), 'light')
+test('cycles from system to dark', () => {
+  assert.equal(getNextTheme('system'), 'dark')
 })
 
-test('switches from the currently rendered light theme to dark', () => {
-  assert.equal(getNextTheme(false), 'dark')
+test('cycles from dark to light', () => {
+  assert.equal(getNextTheme('dark'), 'light')
+})
+
+test('cycles from light back to system', () => {
+  assert.equal(getNextTheme('light'), 'system')
+})
+
+test('treats a missing stored theme as system', () => {
+  assert.equal(getNextTheme(null), 'dark')
+  assert.equal(getNextTheme(undefined), 'dark')
 })
