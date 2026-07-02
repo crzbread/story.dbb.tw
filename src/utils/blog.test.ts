@@ -2,8 +2,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
+  formatTimelineDate,
   getBlogSlug,
-  getBlogTimelineItems,
   getFeaturedBlogPosts,
   normalizeBlogPost,
   serializeJsonForScript,
@@ -66,44 +66,9 @@ test('filters featured posts and sorts them by publishDate', () => {
   ])
 })
 
-test('builds timeline items from blog posts in publish date order', () => {
-  const olderPost = {
-    id: 'older-story/index',
-    data: {
-      title: '舊文章',
-      description: '比較早發表的文章',
-      publishDate: new Date('2026-01-01'),
-      tags: ['文學']
-    }
-  }
-  const newerPost = {
-    id: 'newer-story/index',
-    data: {
-      title: '新文章',
-      description: '比較晚發表的文章',
-      publishDate: new Date('2026-06-15'),
-      tags: ['科幻', '都市']
-    }
-  }
-
-  assert.deepEqual(getBlogTimelineItems([olderPost, newerPost]), [
-    {
-      date: '2026-06-15',
-      description: '比較晚發表的文章',
-      href: '/blog/newer-story',
-      tags: ['科幻', '都市'],
-      title: '新文章',
-      updateText: '新增了「新文章」文章'
-    },
-    {
-      date: '2026-01-01',
-      description: '比較早發表的文章',
-      href: '/blog/older-story',
-      tags: ['文學'],
-      title: '舊文章',
-      updateText: '新增了「舊文章」文章'
-    }
-  ])
+test('formats a timeline date as zero-padded UTC yyyy-mm-dd', () => {
+  assert.equal(formatTimelineDate(new Date('2026-06-05T00:00:00Z')), '2026-06-05')
+  assert.equal(formatTimelineDate(new Date('2026-11-15T23:59:59Z')), '2026-11-15')
 })
 
 test('serializes JSON for an inline script without allowing script termination', () => {
