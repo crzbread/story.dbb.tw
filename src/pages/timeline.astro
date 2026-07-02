@@ -3,7 +3,12 @@ import { getImage } from 'astro:assets'
 
 import { getBlogCollection } from 'astro-pure/server'
 import PageLayout from '@/layouts/BaseLayout.astro'
-import { formatTimelineDate, normalizeBlogPost, sortBlogPosts } from '@/utils/blog'
+import {
+  formatTimelineDate,
+  normalizeBlogPost,
+  serializeJsonForScript,
+  sortBlogPosts
+} from '@/utils/blog'
 
 import { bookSettings, bookText } from '../timeline.config'
 
@@ -35,6 +40,27 @@ const entries = await Promise.all(
 
 // 文案裡的 {count} 代換成文章總數
 const fill = (text: string) => text.replaceAll('{count}', String(entries.length))
+
+// 時間軸模式：文章少時每篇一個點；超過門檻改用拉桿（scrubber），密度再高都能操作
+const dotMode = entries.length <= bookSettings.scrubberThreshold
+
+// scrubber 模式的月份刻度（每個月第一篇文章的位置；跨年時標年份）
+const monthTicks: { label: string; pct: number }[] = []
+if (!dotMode) {
+  let lastMonth = ''
+  let lastYear = ''
+  entries.forEach((post, i) => {
+    const [year, month] = post.date.split('-')
+    const key = `${year}-${month}`
+    if (key === lastMonth) return
+    lastMonth = key
+    monthTicks.push({
+      label: year === lastYear ? `${Number(month)}月` : `${year}年${Number(month)}月`,
+      pct: ((i + 0.5) / entries.length) * 100
+    })
+    lastYear = year
+  })
+}
 
 type Entry = (typeof entries)[number]
 type Page =
@@ -88,6 +114,9 @@ const meta = {
   title: bookText.pageTitle,
   description: bookText.pageDescription
 }
+
+// masthead.highlight 為可選欄位：config 裡有寫才會渲染金色強調字
+const masthead = bookText.masthead as { title: string; sub: string; highlight?: string }
 ---
 
 <PageLayout {meta} highlightColor='#C9A24B'>
@@ -99,34 +128,84 @@ const meta = {
     >
       <header class='panel-head'>
         <h1 id='tl-page-title'>
-          {bookText.masthead.title}
-          <span class='hl'>{bookText.masthead.highlight}</span>
+          {masthead.title}
+          {masthead.highlight && <span class='hl'>{masthead.highlight}</span>}
         </h1>
-        <p class='sub'>{bookText.masthead.sub}</p>
+        <p class='sub'>{masthead.sub}</p>
       </header>
 
-      <!-- 出版時間軸：每個點是一篇文章，點下去直接翻到那一頁 -->
+      <!-- 出版時間軸：文章少時每篇一個點；多時是拉桿，指到哪篇顯示哪篇 -->
       <nav class='timeline' id='tl-page-timeline' aria-label='文章發佈時間軸'>
         <span class='tl-edge'>{entries[0]?.date}</span>
-        <div class='tl-track'>
-          <div class='tl-line'><i id='tl-fill'></i></div>
-          {
-            entries.map((post) => (
-              <button
-                class:list={['tl-dot', { featured: post.featured }]}
-                data-post={post.index}
-                aria-label={`${post.date} ${post.title}${post.featured ? '（精選）' : ''}`}
-              >
-                <span class='tl-tip'>
-                  <b>{post.date}</b>
-                  {post.featured ? `★ ${post.title}` : post.title}
-                </span>
-              </button>
-            ))
-          }
-        </div>
+        {
+          dotMode ? (
+            <div class='tl-track'>
+              <div class='tl-line'>
+                <i id='tl-fill' />
+              </div>
+              {entries.map((post) => (
+                <button
+                  class:list={['tl-dot', { featured: post.featured }]}
+                  data-post={post.index}
+                  aria-label={`${post.date} ${post.title}${post.featured ? '（精選）' : ''}`}
+                >
+                  <span class='tl-tip'>
+                    <b>{post.date}</b>
+                    {post.featured ? `★ ${post.title}` : post.title}
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div
+              class='tl-scrub'
+              id='tl-scrub'
+              role='slider'
+              tabindex='0'
+              aria-label='文章時間軸拉桿'
+              aria-valuemin='0'
+              aria-valuemax={entries.length}
+              aria-valuenow='0'
+              aria-valuetext='封面'
+            >
+              <div class='tl-line'>
+                <i id='tl-fill' />
+              </div>
+              {entries
+                .filter((post) => post.featured)
+                .map((post) => (
+                  <i
+                    class='tl-star'
+                    style={`left: ${((post.index + 0.5) / entries.length) * 100}%`}
+                  />
+                ))}
+              <i class='tl-cursor' id='tl-cursor' hidden />
+              <div class='tl-tip' id='scrub-tip' hidden>
+                <b id='scrub-tip-date' />
+                <span id='scrub-tip-title' />
+              </div>
+              <div class='tl-months' aria-hidden='true'>
+                {monthTicks.map((tick) => (
+                  <span style={`left: ${tick.pct}%`}>{tick.label}</span>
+                ))}
+              </div>
+            </div>
+          )
+        }
         <span class='tl-edge'>{entries.at(-1)?.date}</span>
       </nav>
+      {
+        !dotMode && (
+          <script
+            id='tl-data'
+            type='application/json'
+            is:inline
+            set:html={serializeJsonForScript(
+              entries.map((post) => ({ d: post.date, t: post.title, f: post.featured }))
+            )}
+          />
+        )
+      }
 
       <div class='stage' id='tl-page-stage'>
         <div class='book-shift' id='book-shift'>
@@ -285,6 +364,16 @@ const meta = {
     const panel = document.querySelector('.book-panel')!
     const sheets = [...book.querySelectorAll<HTMLElement>('.sheet')]
     const dots = [...document.querySelectorAll<HTMLElement>('.tl-dot')]
+    // 拉桿（scrubber）模式的元素：文章數在門檻以下時皆為 null
+    const scrub = document.getElementById('tl-scrub')
+    const cursor = document.getElementById('tl-cursor')
+    const scrubTip = document.getElementById('scrub-tip')
+    const scrubTipDate = document.getElementById('scrub-tip-date')
+    const scrubTipTitle = document.getElementById('scrub-tip-title')
+    const postMeta: { d: string; t: string; f: boolean }[] = JSON.parse(
+      document.getElementById('tl-data')?.textContent || '[]'
+    )
+    const POSTS = dots.length || postMeta.length
     const fill = document.getElementById('tl-fill')!
     const indicator = document.getElementById('indicator')!
     const btnPrev = document.getElementById('btn-prev')!
@@ -298,9 +387,6 @@ const meta = {
     let current = 0 // 已翻過去的紙張數：0 = 封面，S = 封底
     let pending: ReturnType<typeof setTimeout>[] = []
     let seq = 0
-
-    // 窄直式螢幕時整本書被轉了 90°，點擊的軸向要跟著換
-    const rotatedMq = matchMedia('(orientation: portrait) and (width < 440px)')
 
     const baseZ = (el: HTMLElement, i: number) =>
       String(el.classList.contains('flipped') ? i + 1 : S - i)
@@ -324,15 +410,18 @@ const meta = {
       pending.forEach(clearTimeout)
       pending = []
       seq = 0
+      // 一次跳很多頁時壓縮間隔，整串連翻控制在一秒左右（像快速撥書頁）
+      const distance = Math.abs(target - current)
+      const step = distance > 10 ? Math.min(STAGGER_MS, 1000 / distance) : STAGGER_MS
       if (target > current) {
         for (let i = current; i < target; i++) {
           const k = i - current
-          pending.push(setTimeout(() => flipSheet(i, true), k * STAGGER_MS))
+          pending.push(setTimeout(() => flipSheet(i, true), k * step))
         }
       } else {
         for (let i = current - 1; i >= target; i--) {
           const k = current - 1 - i
-          pending.push(setTimeout(() => flipSheet(i, false), k * STAGGER_MS))
+          pending.push(setTimeout(() => flipSheet(i, false), k * step))
         }
       }
       current = target
@@ -352,12 +441,21 @@ const meta = {
         dot.classList.toggle('active', p === activePost)
         dot.classList.toggle('passed', p < activePost)
       })
-      const seen = Math.max(0, Math.min(dots.length, current - 1))
-      fill.style.width = dots.length ? `${(seen / dots.length) * 100}%` : '0%'
+      const seen = Math.max(0, Math.min(POSTS, current - 1))
+      fill.style.width = POSTS ? `${(seen / POSTS) * 100}%` : '0%'
 
       const faces = book.querySelectorAll<HTMLElement>('.face')
       const label = faces[current * 2]?.dataset.label || faces[current * 2 - 1]?.dataset.label
       indicator.textContent = current === 0 ? '封面' : `${label}（${current} / ${S} 跨頁）`
+
+      // 拉桿模式：目前位置的亮點與 aria 狀態
+      if (scrub && cursor) {
+        const onPost = activePost >= 0 && activePost < POSTS
+        cursor.hidden = !onPost
+        if (onPost) cursor.style.left = `${((activePost + 0.5) / POSTS) * 100}%`
+        scrub.setAttribute('aria-valuenow', String(Math.max(0, activePost + 1)))
+        scrub.setAttribute('aria-valuetext', indicator.textContent || '')
+      }
     }
 
     // ---------- 自動翻頁 ----------
@@ -391,7 +489,7 @@ const meta = {
     btnNext.addEventListener('click', manual(next))
     btnPrev.addEventListener('click', manual(prev))
 
-    // 點書頁翻頁（點到連結時放行）；書被轉 90° 時右頁在畫面下半部
+    // 點書頁翻頁（點到連結時放行）：點右半往後、左半往前
     // 為了能選取／複製書頁文字：拖曳選字（位移 > 6px）或畫面上還有選取範圍時不翻頁
     let pressAt: { x: number; y: number } | null = null
     book.addEventListener('pointerdown', (e) => {
@@ -404,10 +502,7 @@ const meta = {
       if (pressAt && Math.hypot(e.clientX - pressAt.x, e.clientY - pressAt.y) > 6) return
       stopAuto()
       const rect = book.getBoundingClientRect()
-      const forward = rotatedMq.matches
-        ? e.clientY - rect.top > rect.height / 2
-        : e.clientX - rect.left > rect.width / 2
-      if (forward) next()
+      if (e.clientX - rect.left > rect.width / 2) next()
       else prev()
     })
 
@@ -418,6 +513,31 @@ const meta = {
         manual(() => goTo(Number(dot.dataset.post) + 2))
       )
     })
+
+    // 拉桿模式：游標位置換算成最近的文章，指到顯示、點了翻過去
+    if (scrub) {
+      const idxFromX = (clientX: number) => {
+        const rect = scrub.getBoundingClientRect()
+        const ratio = (clientX - rect.left) / rect.width
+        return Math.max(0, Math.min(POSTS - 1, Math.floor(ratio * POSTS)))
+      }
+      const showTip = (i: number) => {
+        const item = postMeta[i]
+        if (!item || !scrubTip || !scrubTipDate || !scrubTipTitle) return
+        scrubTipDate.textContent = item.d
+        scrubTipTitle.textContent = (item.f ? '★ ' : '') + item.t
+        scrubTip.style.left = `${((i + 0.5) / POSTS) * 100}%`
+        scrubTip.hidden = false
+      }
+      scrub.addEventListener('pointermove', (e) => showTip(idxFromX(e.clientX)))
+      scrub.addEventListener('pointerleave', () => {
+        if (scrubTip) scrubTip.hidden = true
+      })
+      scrub.addEventListener('click', (e) => {
+        stopAuto()
+        goTo(idxFromX(e.clientX) + 2)
+      })
+    }
 
     // 鍵盤：只在書本進到視野內時攔截方向鍵（頁面其他區塊不受影響）
     let panelVisible = false
@@ -438,8 +558,7 @@ const meta = {
     }
     window.addEventListener('keydown', onKeydown)
 
-    // 觸控滑動：只掛在書的區域、且水平位移明顯大於垂直才翻頁（不干擾頁面捲動）。
-    // 轉 90° 模式不做滑動翻頁（垂直滑動保留給捲動），點上下半頁即可翻。
+    // 觸控滑動：只掛在書的區域、且水平位移明顯大於垂直才翻頁（不干擾頁面捲動）
     let touch: { x: number; y: number } | null = null
     stage.addEventListener(
       'touchstart',
@@ -451,7 +570,7 @@ const meta = {
     stage.addEventListener(
       'touchend',
       (e) => {
-        if (!touch || rotatedMq.matches) return
+        if (!touch) return
         const dx = e.changedTouches[0].clientX - touch.x
         const dy = e.changedTouches[0].clientY - touch.y
         touch = null
@@ -638,6 +757,72 @@ const meta = {
     .tl-dot:focus-visible .tl-tip {
       opacity: 1;
       translate: -50% 0;
+    }
+
+    /* ---------- 時間軸：拉桿（scrubber）模式，文章多時啟用 ---------- */
+    .tl-scrub {
+      position: relative;
+      flex: 1;
+      height: 44px;
+      cursor: pointer;
+      touch-action: pan-y;
+    }
+    .tl-scrub:focus-visible {
+      outline: 2px solid hsl(var(--primary));
+      outline-offset: 2px;
+    }
+    .tl-scrub .tl-line {
+      inset: 15px 0 auto;
+      translate: none;
+    }
+    .tl-star {
+      position: absolute;
+      top: 16px;
+      width: 9px;
+      height: 9px;
+      translate: -50% -50%;
+      rotate: 45deg;
+      background: var(--gold);
+      outline: 2px solid hsl(var(--background));
+      box-shadow: 0 0 10px hsl(43 55% 52% / 0.75);
+      pointer-events: none;
+      z-index: 1;
+    }
+    .tl-cursor {
+      position: absolute;
+      top: 16px;
+      width: 10px;
+      height: 10px;
+      translate: -50% -50%;
+      rotate: 45deg;
+      background: hsl(var(--primary));
+      box-shadow: 0 0 12px hsl(var(--primary) / 0.8);
+      pointer-events: none;
+      z-index: 2;
+      transition: left 0.3s ease;
+    }
+    .tl-scrub .tl-tip {
+      opacity: 1;
+      translate: -50% 0;
+      bottom: calc(100% - 6px);
+      z-index: 6;
+    }
+    .tl-scrub .tl-tip[hidden] {
+      display: none;
+    }
+    .tl-months {
+      position: absolute;
+      inset: 26px 0 auto;
+      height: 16px;
+      pointer-events: none;
+    }
+    .tl-months span {
+      position: absolute;
+      translate: -50%;
+      font-size: 0.6rem;
+      letter-spacing: 0.04em;
+      color: hsl(var(--muted-foreground));
+      white-space: nowrap;
     }
 
     /* ---------- 書 ---------- */
@@ -1013,27 +1198,34 @@ const meta = {
       }
     }
 
-    /* 直式窄螢幕：整本書轉 90° 變橫的，把手機轉過來讀 */
-    @media (orientation: portrait) and (width < 440px) {
-      .stage {
-        --rot-w: min(118vw, 76svh);
-        height: var(--rot-w);
-        overflow: visible;
+    /* 窄直式螢幕：維持直式跨頁，縮小留白與字級，寬度絕不超出容器 */
+    @media (width < 440px) {
+      .book-panel {
+        padding-inline: 0.6rem;
       }
+      /* 極窄螢幕月份標籤會互相重疊，只留軌道與星標 */
+      .tl-months {
+        display: none;
+      }
+      .book {
+        aspect-ratio: 5 / 4;
+      }
+      /* 空間不夠時不再左右移書（避免被面板裁掉） */
       .book-shift.at-cover,
       .book-shift.at-end {
         translate: 0 0;
       }
-      .book {
-        rotate: 90deg;
-        width: var(--rot-w);
-        aspect-ratio: 3 / 2;
-        /* 書的 CSS 盒比容器寬，margin auto 會失效；用負邊距讓它水平置中 */
-        margin-left: calc((100% - var(--rot-w)) / 2);
-        margin-right: 0;
+      .paper {
+        line-height: 1.65;
+      }
+      .entry-title {
+        font-size: 0.85rem;
       }
       .entry-desc {
         -webkit-line-clamp: 4;
+      }
+      .plate img {
+        max-height: 52cqi;
       }
     }
 
