@@ -3,6 +3,7 @@ title: "底層的攪拌"
 description: "沈越與林澄用漂亮的理論替停滯命名，從咖啡館講座到共同生活，把每個具體責任都包裹成結構問題。"
 publishDate: 2026-07-04
 language: zh-TW
+featured: true
 tags:
   - 現代寫實
   - 諷刺
