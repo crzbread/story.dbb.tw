@@ -8,7 +8,7 @@ tags:
   - 關係
   - 成長
 heroImage:
-  src: ./cover.png
+  src: ./cover.jpg
   alt: "無害的影子 封面圖片"
 ---
 
@@ -190,3 +190,8 @@ heroImage:
 
 
 ![第三章：羽毛落盡的深淵插圖](./chapter_03.jpg)
+
+
+---
+
+第一次使用 deepseek 潤稿，感覺文藝很多。
