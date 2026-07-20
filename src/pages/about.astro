@@ -1,0 +1,26 @@
+---
+import PageLayout from '@/layouts/BaseLayout.astro'
+---
+
+<PageLayout meta={{ title: '關於' }} highlightColor='#659EB9'>
+  <main class='flex w-full flex-col items-center'>
+    <section class='animate flex w-full max-w-xl flex-col gap-y-5 text-pretty leading-7 text-muted-foreground'>
+      <h1 class='text-3xl font-medium text-foreground sm:text-4xl'>關於故事調製所</h1>
+      <p>我喜歡看故事，也喜歡一些不一定好找的題材。所以我用 AI 產生初稿，再依照自己的口味挑選、修改和整理。</p>
+      <p>
+        這裡的文章大多由 AI 生成，並經過人工調整；它們不是現實經歷，也不是純人類創作，而是一批為了閱讀樂趣而做出的幻想故事。
+      </p>
+      <div class='flex flex-col gap-3 pt-2 sm:flex-row'>
+        <a
+          class='rounded-xl border border-border bg-white px-5 py-3 text-center font-medium text-foreground transition-colors hover:bg-muted'
+          href='https://docs.google.com/forms/d/e/1FAIpQLSfPCvTgGag0Uf09TMF6OHGx2cwjo6MGRHFTMX4tdfxqOTXU5A/viewform?usp=header'
+          >填寫聯絡表單</a
+        >
+        <a
+          class='rounded-xl border border-border bg-white px-5 py-3 text-center font-medium text-foreground transition-colors hover:bg-muted'
+          href='https://dbb.tw'>前往 dbb.tw</a
+        >
+      </div>
+    </section>
+  </main>
+</PageLayout>

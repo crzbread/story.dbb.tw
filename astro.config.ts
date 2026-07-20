@@ -31,6 +31,11 @@ export default defineConfig({
   trailingSlash: 'never',
   // root: './my-project-directory',
   server: { host: true },
+  vite: {
+    optimizeDeps: {
+      exclude: ['astro-pure']
+    }
+  },
   // https://docs.astro.build/en/guides/prefetch/
   prefetch: {
     // prefetchAll: true,
